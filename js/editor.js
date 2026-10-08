@@ -345,6 +345,8 @@ async function fetchQuotations() {
     if (idParam) {
       const found = allQuotations.find(q => q.id === idParam);
       if (found) loadQuotationIntoState(found);
+    } else {
+      await createNewQuotation();
     }
   } catch (err) {
     console.error('Error cargando cotizaciones:', err);
@@ -430,12 +432,37 @@ async function saveToDatabase() {
   }
 }
 
-function createNewQuotation() {
-  const nextNum = String(allQuotations.length + 1).padStart(3, '0');
+function getNextCorrelativeCode() {
+  const currentYear = new Date().getFullYear();
+  let maxNum = 0;
+  const regex = new RegExp(`COT-${currentYear}-(\\d+)`, 'i');
+
+  allQuotations.forEach(q => {
+    if (!q.code) return;
+    const match = q.code.match(regex);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (num > maxNum) maxNum = num;
+    }
+  });
+
+  return `COT-${currentYear}-${String(maxNum + 1).padStart(3, '0')}`;
+}
+
+async function createNewQuotation() {
+  let nextCode = getNextCorrelativeCode();
+  try {
+    const res = await fetch('/api/next-code');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.nextCode) nextCode = data.nextCode;
+    }
+  } catch (e) {}
+
   S = {
     id: null,
     client: "",
-    code: `COT-${new Date().getFullYear()}-${nextNum}`,
+    code: nextCode,
     plan: "",
     days: 15,
     margin: 30,

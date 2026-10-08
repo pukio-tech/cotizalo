@@ -22,6 +22,32 @@ app.get('/cotizaciones', (req, res) => {
 
 // API Routes
 
+// GET /api/next-code - Get next correlative quotation code
+app.get('/api/next-code', async (req, res) => {
+  try {
+    const currentYear = new Date().getFullYear();
+    const quotations = await prisma.quotation.findMany({
+      select: { code: true }
+    });
+
+    let maxNum = 0;
+    const regex = new RegExp(`COT-${currentYear}-(\\d+)`, 'i');
+    quotations.forEach(q => {
+      if (!q.code) return;
+      const match = q.code.match(regex);
+      if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+
+    const nextCode = `COT-${currentYear}-${String(maxNum + 1).padStart(3, '0')}`;
+    res.json({ nextCode, maxNum });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/quotations - List all quotations
 app.get('/api/quotations', async (req, res) => {
   try {
