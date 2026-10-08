@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Quotation {
+  id         String               @id @default(cuid())
+  code       String               @unique
+  client     String
+  plan       String
+  days       Int                  @default(15)
+  margin     Float                @default(30)
+  igv        Boolean              @default(true)
+  months     Int                  @default(12)
+  hdrOn      Boolean              @default(false)
+  hdrName    String               @default("")
+  hdrL1      String               @default("")
+  hdrL2      String               @default("")
+  items      QuotationItem[]
+  includes   QuotationInclude[]
+  conditions QuotationCondition[]
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id          String    @id @default(cuid())
+  quotationId String    @map("quotation_id")
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  type        String    // 'initial' or 'recurring'
+  desc        String
+  detail      String    @default("")
+  per         String?   // 'mensual', 'anual', or null
+  cant        Int       @default(1)
+  cost        Float     @default(0)
+  order       Int       @default(0)
+
+  @@map("quotation_items")
+}
+
+model QuotationInclude {
+  id          String    @id @default(cuid())
+  quotationId String    @map("quotation_id")
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  text        String
+  order       Int       @default(0)
+
+  @@map("quotation_includes")
+}
+
+model QuotationCondition {
+  id          String    @id @default(cuid())
+  quotationId String    @map("quotation_id")
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  text        String
+  order       Int       @default(0)
+
+  @@map("quotation_conditions")
+}
