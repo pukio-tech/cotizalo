@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/cotizaciones",
+      "destination": "/cotizaciones.html"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    }
+  ]
+}

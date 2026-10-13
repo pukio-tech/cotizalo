@@ -4,7 +4,10 @@ const cors = require('cors');
 const path = require('path');
 const { PrismaClient } = require('@prisma/client');
 
-const prisma = new PrismaClient();
+const globalForPrisma = global;
+const prisma = globalForPrisma.prisma || new PrismaClient();
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -246,7 +249,11 @@ app.delete('/api/quotations/:id', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
-});
+// Start server if not running on Vercel
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
