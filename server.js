@@ -15,12 +15,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Fallback to root files
-app.use(express.static(__dirname));
-
 // HTML View Routes
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 app.get('/cotizaciones', (req, res) => {
-  res.sendFile(path.join(__dirname, 'cotizaciones.html'));
+  res.sendFile(path.join(__dirname, 'public', 'cotizaciones.html'));
 });
 
 // API Routes
