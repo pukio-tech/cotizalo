@@ -39,8 +39,10 @@ export async function duplicateQuotation(sourceId: string | null, input?: unknow
   try {
     const source = input !== undefined ? quoteInputSchema.parse(input) : await repo.getQuotation(idSchema.parse(sourceId));
     if (!source) return { ok: false, error: "La cotización ya no existe" };
-    const code = await repo.nextCode(new Date().getFullYear());
-    const created = await repo.createQuotation({ ...source, code, client: source.client ? `${source.client} (Copia)` : "Copia" });
+    const created = await repo.createQuotation(
+      { ...source, client: source.client ? `${source.client} (Copia)` : "Copia" },
+      { assignCode: true }
+    );
     revalidatePath("/cotizaciones");
     return { ok: true, data: created };
   } catch (e) {

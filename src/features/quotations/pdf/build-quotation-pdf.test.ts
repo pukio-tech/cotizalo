@@ -30,6 +30,22 @@ describe("buildQuotationPDF", () => {
     expect(has(raw, "Condiciones")).toBe(false);
   });
 
+  it("numera las páginas y repite el encabezado de la tabla al saltar de página", () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({ ...initialItem, desc: `Servicio ${i + 1}` }));
+    const { doc } = buildQuotationPDF(quote({ initial: many }), new Date(2026, 9, 23), { jsPDF, autoTable });
+    const pages = doc.getNumberOfPages();
+    expect(pages).toBeGreaterThan(1);
+    const raw = doc.output();
+    expect(raw).toContain(`Página ${pages} de ${pages}`);
+    expect(raw.split("(Descripción) Tj").length - 1).toBeGreaterThanOrEqual(pages);
+  });
+
+  it("usa los datos del emisor en el pie si hay cabecera", () => {
+    const raw = render(quote({ hdr: { on: true, name: "PUKIO", l1: "hola@pukio.pe", l2: "" } }));
+    expect(raw).toContain("PUKIO  ·  hola@pukio.pe");
+    expect(render(quote())).toContain("Cotización COT-2026-010");
+  });
+
   it("nombra el archivo con código y cliente", () => {
     const { fileName } = buildQuotationPDF(quote({ client: "Café Ñandú SAC" }), new Date(), { jsPDF, autoTable });
     expect(fileName).toBe("COT-2026-010_Café_Ñandú_SAC.pdf");

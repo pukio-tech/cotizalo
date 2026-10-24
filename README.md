@@ -23,7 +23,7 @@ Plan de evolución por fases: [docs/PLAN.md](docs/PLAN.md).
 ```bash
 npm install
 npm run dev          # http://localhost:3000
-npm test             # tests de cálculos, reglas de secciones y PDF
+npm test             # unitarios + integración (Postgres en memoria con PGlite, no toca el .env)
 npm run lint
 npm run typecheck
 npm run build        # prisma generate + next build
@@ -59,6 +59,11 @@ Solo se dibujan las secciones con contenido y se renumeran:
 - **Resumen de pagos**: solo las filas presentes, y solo si hay más de un tipo de pago o mensualidades.
 
 Están en `src/features/quotations/domain/sections.ts` y cubiertas por tests.
+
+## Montos y correlativo
+
+- Todos los cálculos se hacen en **céntimos** (`domain/calc.ts`): unitario redondeado al céntimo, importe = unitario × cantidad, IGV redondeado una vez sobre el subtotal.
+- El correlativo `COT-AAAA-NNN` se asigna dentro de una transacción con un *advisory lock* de Postgres (`server/repository.ts`), así que nunca se repite aunque dos personas guarden a la vez.
 
 ## Base de datos
 

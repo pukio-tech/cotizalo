@@ -86,13 +86,23 @@ src/
 - Listado paginado y búsqueda en servidor.
 - Tests con **Vitest** para cálculos y reglas del PDF.
 
-## Fase 2 · Dominio y PDF robustos
+## Fase 2 · Dominio y PDF robustos ✅ (rama `next`, sin cambios de esquema)
 
-- Cálculos en céntimos (enteros) para evitar errores de redondeo.
-- Reglas de secciones como funciones puras testeadas (`getVisibleSections(quote)`).
-- Correlativo atómico con una tabla `Counter` (o secuencia de Postgres) en lugar de leer toda la tabla.
-- Definir la fecha de emisión (`issuedAt`) explícita en la cotización.
-- Plantilla de PDF mejorada: logo, colores de marca, numeración de páginas, pie con datos de contacto.
+- [x] **Montos en céntimos:** el unitario se redondea al céntimo, el importe es exactamente unitario × cantidad y el IGV se redondea una vez sobre el subtotal. Lo que ve el cliente cuadra al céntimo.
+- [x] Reglas de secciones como funciones puras testeadas (`visibleSections`, desde la Fase 1).
+- [x] **Correlativo atómico** con un *advisory lock* de Postgres dentro de la transacción, en vez de una tabla `Counter`, así que no hace falta migrar Neon. Si dos personas guardan el mismo código automático, la segunda recibe el siguiente y el editor lo avisa. Un código personalizado repetido da error.
+- [x] **Fecha del PDF coherente:** la de creación si está guardada y la de hoy si no, igual desde el editor y desde el listado (`issueDate` en `pdf/client.ts`).
+- [x] **Plantilla del PDF:**
+  - Barra de marca y cabecera en dos columnas (emisor / cotización).
+  - Recuadro de cliente que ajusta textos largos y resumen destacado.
+  - Pie con datos de contacto y "Página X de Y" en todas las páginas.
+  - Encabezado de tabla repetido al saltar de página; un servicio y su detalle nunca se separan.
+- [x] **Tests de integración** del repositorio contra Postgres en memoria (PGlite): correlativo, guardados simultáneos, códigos repetidos, actualización, borrado en cascada, búsqueda y paginación. En total, 27 tests.
+
+**Movido a la Fase 4** (necesitan cambios de esquema y se aplicarán junto con organizaciones):
+
+- Fecha de emisión editable (`issuedAt`).
+- Logo en el PDF (necesita almacenamiento de archivos).
 
 ## Fase 3 · Rediseño de UI con design system
 

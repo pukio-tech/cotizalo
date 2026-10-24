@@ -1,22 +1,33 @@
 import type { QuoteInput, QuoteItem, RecurringItem } from "./schema";
 
+// Todos los montos calculados están en céntimos (enteros): así lo que ve el cliente
+// cuadra al céntimo (unitario × cantidad = importe; subtotal + IGV = total).
+export type Cents = number;
+
 export const IGV_RATE = 0.18;
 
 type Pricing = Pick<QuoteInput, "margin" | "igv">;
 
-/** Precio unitario de venta: costo base + margen. */
-export const unitPrice = (item: Pick<QuoteItem, "cost">, margin: number) =>
-  (Number(item.cost) || 0) * (1 + (Number(margin) || 0) / 100);
+/** Redondeo al entero más cercano que corrige el ruido de coma flotante (1.005 × 100 → 101). */
+const round = (x: number) => Math.round(Number(x.toPrecision(12)));
+
+/** Precio unitario de venta en céntimos: costo base + margen, redondeado al céntimo. */
+export const unitPrice = (item: Pick<QuoteItem, "cost">, margin: number): Cents =>
+  round((Number(item.cost) || 0) * (100 + (Number(margin) || 0)));
+
+/** Importe de una línea en céntimos. */
+export const lineTotal = (item: Pick<QuoteItem, "cost" | "cant">, margin: number): Cents =>
+  unitPrice(item, margin) * (Number(item.cant) || 1);
 
 export interface Sums {
-  sub: number;
-  igv: number;
-  tot: number;
+  sub: Cents;
+  igv: Cents;
+  tot: Cents;
 }
 
 export function sums(list: QuoteItem[], { margin, igv }: Pricing): Sums {
-  const sub = list.reduce((s, i) => s + unitPrice(i, margin) * (Number(i.cant) || 1), 0);
-  const tax = igv ? sub * IGV_RATE : 0;
+  const sub = list.reduce((s, i) => s + lineTotal(i, margin), 0);
+  const tax = igv ? round(sub * IGV_RATE) : 0;
   return { sub, igv: tax, tot: sub + tax };
 }
 
@@ -27,7 +38,7 @@ export interface QuoteTotals {
   monthly: Sums;
   annual: Sums;
   /** Pago inicial + mensualidades del primer año + renovaciones anuales. */
-  firstYear: number;
+  firstYear: Cents;
   /** Qué bloques tienen al menos un servicio (decide qué secciones se muestran). */
   has: { initial: boolean; monthly: boolean; annual: boolean };
 }

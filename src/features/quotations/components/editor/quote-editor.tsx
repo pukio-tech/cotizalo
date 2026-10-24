@@ -61,8 +61,13 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
     run("save", async () => {
       const r = await saveQuotation(quote.id, toInput(quote));
       if (!r.ok) return void toast.error(r.error);
-      toast.success(`Cotización ${r.data.code} guardada`);
-      const next = { ...quote, id: r.data.id };
+      if (r.data.code !== quote.code) {
+        // Otro usuario tomó el correlativo mientras se editaba: el servidor asignó el siguiente
+        toast.success(`Cotización guardada como ${r.data.code}`, { description: `${quote.code} ya estaba en uso.` });
+      } else {
+        toast.success(`Cotización ${r.data.code} guardada`);
+      }
+      const next = { ...quote, id: r.data.id, code: r.data.code };
       setQuote(next);
       setSaved(JSON.stringify(next));
       // La recién creada pasa a su URL propia (y se recarga desde la BD)
@@ -92,10 +97,10 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
 
   const showPdf = () =>
     run("pdf", async () => {
-      const { url, fileName } = await quotationPdfUrl(quote, new Date());
+      const { url, fileName } = await quotationPdfUrl(quote);
       setPreview({ url, fileName, title: `${quote.code} · ${quote.client || "Cotización"}` });
     });
-  const downloadPdf = () => run("pdf", () => downloadQuotationPdf(quote, new Date()));
+  const downloadPdf = () => run("pdf", () => downloadQuotationPdf(quote));
 
   const go = (i: number) => {
     setStep(i);

@@ -52,7 +52,7 @@ export function RowActions({ id, code, client }: { id: string; code: string; cli
       const r = await loadQuotation(id);
       if (!r.ok) return void toast.error(r.error);
       const q = r.data;
-      const { url, fileName } = await quotationPdfUrl(q, new Date(q.createdAt ?? Date.now()));
+      const { url, fileName } = await quotationPdfUrl(q);
       setPreview({ url, fileName, title: `${q.code} · ${q.client || "Cotización"}` });
     });
 

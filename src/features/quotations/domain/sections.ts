@@ -1,10 +1,10 @@
-import { fillDays, quoteTotals, type QuoteTotals } from "./calc";
+import { fillDays, quoteTotals, type Cents, type QuoteTotals } from "./calc";
 import type { QuoteInput } from "./schema";
 
 // Reglas de qué se muestra en el PDF (y en el resumen del editor).
 // Una sección sin contenido no aparece y las numeradas se renumeran.
 
-export type SummaryRow = { label: string; amount: number };
+export type SummaryRow = { label: string; amount: Cents };
 
 export interface VisibleSections {
   initial: boolean;

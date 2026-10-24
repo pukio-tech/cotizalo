@@ -2,7 +2,8 @@ const MONTHS = ["ene.", "feb.", "mar.", "abr.", "may.", "jun.", "jul.", "ago.", 
 
 const moneyFormat = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export const money = (n: number) => "S/ " + moneyFormat.format(Number(n) || 0);
+/** Formatea un monto en céntimos: 153400 → "S/ 1,534.00". */
+export const money = (cents: number) => "S/ " + moneyFormat.format((Number(cents) || 0) / 100);
 
 export const formatDate = (d: Date) =>
   String(d.getDate()).padStart(2, "0") + " " + MONTHS[d.getMonth()] + " " + d.getFullYear();

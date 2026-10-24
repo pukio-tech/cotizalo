@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { unitPrice } from "../../domain/calc";
+import { lineTotal, unitPrice } from "../../domain/calc";
 import { money } from "../../domain/format";
 import type { QuoteItem, RecurringItem } from "../../domain/schema";
 import { blankItem, ItemDialog, type ItemDraft } from "./item-dialog";
@@ -49,7 +49,7 @@ export function ItemsEditor<T extends QuoteItem | RecurringItem>({
                   {it.detail && <span className="mt-0.5 block text-xs whitespace-pre-line text-muted-foreground">{it.detail}</span>}
                 </span>
                 <span className="shrink-0 text-right font-semibold tabular-nums">
-                  {u ? money(u * it.cant) : <span className="font-bold text-success">Incluido</span>}
+                  {u ? money(lineTotal(it, margin)) : <span className="font-bold text-success">Incluido</span>}
                   {it.cant > 1 && (
                     <span className="block text-xs font-normal text-muted-foreground">
                       {it.cant} × {money(u)}

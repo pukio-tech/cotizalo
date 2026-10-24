@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
-import type { QuoteTotals } from "../../domain/calc";
+import type { Cents, QuoteTotals } from "../../domain/calc";
 import { money } from "../../domain/format";
 
-export function TotalRow({ label, amount, strong }: { label: string; amount: number; strong?: boolean }) {
+export function TotalRow({ label, amount, strong }: { label: string; amount: Cents; strong?: boolean }) {
   return (
     <div className={cn("flex justify-between gap-4", strong ? "mt-1 border-t border-foreground pt-2 text-base font-bold" : "text-muted-foreground")}>
       <span>{label}</span>

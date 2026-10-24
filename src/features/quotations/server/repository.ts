@@ -53,10 +53,12 @@ export async function getQuotation(id: string) {
   return r ? toQuote(r) : null;
 }
 
-/** Siguiente correlativo del año: COT-2026-001, 002… (atómico en la Fase 2). */
-export async function nextCode(year: number) {
+type Db = Prisma.TransactionClient | typeof prisma;
+
+/** Siguiente correlativo del año: COT-2026-001, 002… Solo es definitivo dentro de `createQuotation`. */
+export async function nextCode(year: number, db: Db = prisma) {
   const prefix = `COT-${year}-`;
-  const codes = await prisma.quotation.findMany({
+  const codes = await db.quotation.findMany({
     where: { code: { startsWith: prefix, mode: "insensitive" } },
     select: { code: true },
   });
@@ -67,18 +69,36 @@ export async function nextCode(year: number) {
   return prefix + String(max + 1).padStart(3, "0");
 }
 
-export async function createQuotation(input: QuoteInput) {
-  const d = toRecordData(input);
-  const r = await prisma.quotation.create({
-    data: {
-      ...d.fields,
-      items: { create: d.items },
-      includes: { create: d.includes },
-      conditions: { create: d.conditions },
-    },
-    select: { id: true, code: true },
+// Clave fija del advisory lock que serializa la asignación de correlativos entre peticiones
+const CODE_LOCK_KEY = 727_120_001;
+const AUTO_CODE = /^COT-\d{4}-\d+$/i;
+
+/**
+ * Crea la cotización asignando el correlativo de forma atómica: dentro de la transacción
+ * se toma un lock de Postgres, así dos usuarios guardando a la vez nunca reciben el mismo código.
+ * - `assignCode: true` siempre asigna el siguiente (duplicar).
+ * - Si el código es automático (COT-AAAA-NNN) y ya lo tomó otra cotización, se asigna el siguiente.
+ * - Un código personalizado repetido sí falla (P2002) para que el usuario lo corrija.
+ */
+export async function createQuotation(input: QuoteInput, { assignCode = false } = {}) {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(${CODE_LOCK_KEY})`);
+    let code = input.code;
+    const taken = async () => (await tx.quotation.count({ where: { code: { equals: code, mode: "insensitive" } } })) > 0;
+    if (assignCode || (AUTO_CODE.test(code) && (await taken()))) {
+      code = await nextCode(new Date().getFullYear(), tx);
+    }
+    const d = toRecordData({ ...input, code });
+    return tx.quotation.create({
+      data: {
+        ...d.fields,
+        items: { create: d.items },
+        includes: { create: d.includes },
+        conditions: { create: d.conditions },
+      },
+      select: { id: true, code: true },
+    });
   });
-  return r;
 }
 
 export async function updateQuotation(id: string, input: QuoteInput) {
