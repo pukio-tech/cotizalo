@@ -43,9 +43,24 @@ Objetivo: valor inmediato en producción, sin cambiar de stack.
 - [x] Guardar ya no limpia el formulario: la cotización queda abierta y la URL guarda `?id=`.
 - [x] Escape de HTML reforzado y sin texto de usuario dentro de `onclick`.
 
-## Fase 1 · Base Next.js (sin cambiar la base de datos)
+## Fase 1 · Base Next.js (sin cambiar la base de datos) ✅ (rama `next`)
 
 Objetivo: el mismo producto funcionando en Next.js, desplegado en Vercel, con la misma BD.
+
+**Hecho:**
+
+- [x] Next.js 16.4 (App Router, Cache Components, Partial Prefetching) + TypeScript + Tailwind v4 + shadcn/ui; Express eliminado.
+- [x] Mismo `schema.prisma` y misma BD; las URLs antiguas redirigen a las nuevas.
+- [x] Dominio en TS: esquema zod único, cálculos, reglas de secciones del PDF y formato.
+- [x] PDF portado a TS con jsPDF cargado bajo demanda (no pesa en la carga inicial).
+- [x] Server Actions validadas con zod (guardar, duplicar, eliminar, cargar) y repositorio Prisma como único acceso a datos.
+- [x] Listado con búsqueda y paginación en servidor; tabla en escritorio y tarjetas en móvil; confirmación accesible para eliminar.
+- [x] Editor con campos en línea, resumen siempre visible en escritorio, toasts, aviso de cambios sin guardar y estados de carga.
+- [x] 13 tests (Vitest), lint, typecheck y `next build` en verde. Probado de punta a punta en navegador contra Postgres local (PGlite).
+
+**Pendiente para publicar:** probar la rama `next` en un *preview deployment* de Vercel contra Neon y luego fusionar a `main`.
+
+Detalle original de la fase:
 
 - Next.js (App Router) + TypeScript + Tailwind v4 + shadcn/ui, en el mismo repo (rama `next`), reemplazando Express al final.
 - Reutilizar `prisma/schema.prisma` tal cual → **sin migración de datos**.

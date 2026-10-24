@@ -1,68 +1,72 @@
-# Cotizador Pro (Node.js + Express + Prisma + PostgreSQL)
+# Cotízalo (Next.js + Prisma + PostgreSQL)
 
-Sistema de generación y administración de cotizaciones con almacenamiento persistente en **PostgreSQL (Neon)** utilizando **Prisma ORM**, cálculo dinámico de márgenes e IGV, y exportación a **PDF**.
+Generación y administración de cotizaciones con margen, IGV y exportación a **PDF**. Base de datos **PostgreSQL (Neon)** con **Prisma ORM**.
 
----
+Plan de evolución por fases: [docs/PLAN.md](docs/PLAN.md).
 
-## 🚀 Requisitos previos
+## Stack
 
-- **Node.js**: v18 o superior
-- Base de datos **PostgreSQL** configurada en `.env`
+- **Next.js 16** (App Router, Cache Components, Server Actions) + **React 19** + **TypeScript**
+- **Tailwind CSS v4** + **shadcn/ui** (tokens de marca PUKIO en `src/app/globals.css`)
+- **Prisma 5** sobre PostgreSQL (mismo esquema que la versión Express: no requiere migrar datos)
+- **zod** para validar todo lo que llega a las Server Actions
+- **jsPDF** + autotable para el PDF (se genera en el navegador)
+- **Vitest** para dominio y PDF
 
----
+## Requisitos
 
-## 🛠️ Instalación y Configuración
+- Node.js 20.9 o superior
+- `DATABASE_URL` en `.env`
 
-1. **Instalar dependencias:**
-   ```bash
-   npm install
-   ```
+## Desarrollo
 
-2. **Sincronizar esquema de base de datos con Prisma:**
-   ```bash
-   npx prisma db push
-   ```
+```bash
+npm install
+npm run dev          # http://localhost:3000
+npm test             # tests de cálculos, reglas de secciones y PDF
+npm run lint
+npm run typecheck
+npm run build        # prisma generate + next build
+```
 
-3. **Iniciar el servidor:**
-   ```bash
-   # Modo desarrollo (con recarga automática):
-   npm run dev
+> npm 11 pide aprobar los scripts de instalación: los de Prisma ya están aprobados en `allowScripts` de `package.json`.
 
-   # Modo producción:
-   npm start
-   ```
+## Estructura
 
-4. Abrir en el navegador:
-   ```
-   http://localhost:3000
-   ```
+```
+src/
+  app/
+    (app)/layout.tsx                 # sidebar + contenido
+    (app)/cotizaciones/page.tsx      # listado con búsqueda y paginación en servidor
+    (app)/cotizaciones/nueva/        # editor de cotización nueva
+    (app)/cotizaciones/[id]/         # editor de cotización existente
+  features/quotations/
+    domain/      # esquema zod, cálculos, reglas de visibilidad de secciones (+ tests)
+    pdf/         # generador del PDF (+ tests) y carga perezosa en el cliente
+    server/      # repositorio Prisma (único acceso a BD) y Server Actions
+    components/  # editor, listado, vista previa del PDF
+  components/    # sidebar y componentes de UI (shadcn)
+  lib/           # cliente Prisma, utilidades
+prisma/schema.prisma
+```
 
----
+## Reglas del PDF
 
-## 🗄️ Modelo de Base de Datos (Prisma)
+Solo se dibujan las secciones con contenido y se renumeran:
 
-El archivo `prisma/schema.prisma` contiene los siguientes modelos:
+- **Pago inicial** y **Planes y servicios renovables**: solo si tienen servicios (dentro de renovables, el bloque mensual/anual solo si tiene ítems).
+- **Incluye** y **Condiciones**: solo si tienen puntos.
+- **Resumen de pagos**: solo las filas presentes, y solo si hay más de un tipo de pago o mensualidades.
 
-- **`Quotation`**: Cabecera de la cotización (código único, cliente, plan, días de validez, margen, IGV, meses, cabecera PDF).
-- **`QuotationItem`**: Servicios y costos tanto iniciales (`type: 'initial'`) como recurrentes (`type: 'recurring'`, mensual/anual).
-- **`QuotationInclude`**: Puntos incluidos en la propuesta.
-- **`QuotationCondition`**: Condiciones comerciales y formas de pago.
+Están en `src/features/quotations/domain/sections.ts` y cubiertas por tests.
 
----
+## Base de datos
 
-## 📦 Comandos útiles de Prisma
+```bash
+npm run db:push      # sincroniza el esquema
+npm run db:studio    # interfaz gráfica
+```
 
-- **Abrir interfaz gráfica de BD (Prisma Studio):**
-  ```bash
-  npm run db:studio
-  ```
+## Despliegue (Vercel)
 
-- **Actualizar cliente de Prisma:**
-  ```bash
-  npm run db:generate
-  ```
-
-- **Sincronizar cambios del esquema:**
-  ```bash
-  npm run db:push
-  ```
+`vercel.json` fija el framework en Next.js. La variable `DATABASE_URL` del proyecto se mantiene. Las URLs antiguas (`/index.html?id=…`, `/cotizaciones.html`) redirigen a las nuevas.
