@@ -26,27 +26,11 @@ let allQuotations = [];
 const STEPS = ["Datos", "Pago inicial", "Renovables", "Incluye y condiciones", "Resumen"];
 let step = 0;
 
-const $ = id => document.getElementById(id);
-const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-const money = n => 'S/ ' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const MES = ['ene.', 'feb.', 'mar.', 'abr.', 'may.', 'jun.', 'jul.', 'ago.', 'sep.', 'oct.', 'nov.', 'dic.'];
-const fdate = d => String(d.getDate()).padStart(2, '0') + ' ' + MES[d.getMonth()] + ' ' + d.getFullYear();
 const cfg = () => ({ m: S.margin, igv: S.igv, days: S.days, months: S.months });
-const unit = (it, m) => (Number(it.cost) || 0) * (1 + (Number(m) || 0) / 100);
 
-function sums(list, m, igv) {
-  const sub = (list || []).reduce((s, i) => s + unit(i, m) * (Number(i.cant) || 1), 0);
-  const t = igv ? sub * 0.18 : 0;
-  return { sub, igv: t, tot: sub + t };
-}
-
-function totals() {
-  const c = cfg();
-  const a = sums(items.initial, c.m, c.igv);
-  const mo = sums((items.recurring || []).filter(i => i.per === 'mensual'), c.m, c.igv);
-  const an = sums((items.recurring || []).filter(i => i.per === 'anual'), c.m, c.igv);
-  return { a, mo, an, y1: a.tot + mo.tot * c.months + an.tot };
-}
+// Cotización en edición en el formato normalizado de core.js
+const current = () => ({ ...S, initial: items.initial, recurring: items.recurring });
+const totals = () => quoteTotals(current());
 
 function field(f) {
   const id = 'f_' + f.k, v = f.v;
@@ -182,7 +166,7 @@ function itemList(k) {
 
 function textList(k, title, hint) {
   return `<div class="card"><h3 class="font-bold text-[#141c31]">${title}</h3><p class="text-xs text-neutral-500 mb-3">${hint}</p><ul class="divide-y divide-neutral-200">`
-  + (S[k] || []).map((t, i) => `<li class="flex justify-between gap-3 py-2 text-sm"><span>${esc(t.replace('{dias}', S.days))}</span><button class="text-xs font-semibold underline shrink-0" onclick="editText('${k}',${i})">Editar</button></li>`).join('')
+  + (S[k] || []).map((t, i) => `<li class="flex justify-between gap-3 py-2 text-sm"><span>${esc(fillDays(t, S.days))}</span><button class="text-xs font-semibold underline shrink-0" onclick="editText('${k}',${i})">Editar</button></li>`).join('')
   + `</ul><button class="btn sec mt-3" onclick="editText('${k}',-1)">+ Agregar</button></div>`;
 }
 
@@ -198,17 +182,17 @@ function render() {
     v.push(card('Precios e impuestos', `<p>Margen de ${S.margin}% · ${S.igv ? 'IGV 18% incluido en totales' : 'Precios netos'}</p><p>${S.months} mensualidad(es) en el primer año</p>`, 'editPrices'));
     v.push(card('Cabecera del PDF', S.hdr.on ? `<p class="font-semibold text-neutral-900">${esc(S.hdr.name) || '(sin nombre)'}</p><p>${esc(S.hdr.l1)}</p><p>${esc(S.hdr.l2)}</p>` : '<p class="text-neutral-400">Sin cabecera personalizada</p>', 'editHdr'));
   } else if (step === 1) {
-    v.push('<h2 class="text-lg font-bold text-[#141c31]">2. Pago inicial (único)</h2><p class="text-xs text-neutral-500">Desarrollo y puesta en marcha. Toca un servicio para editarlo.</p>', itemList('initial'),
-      `<div class="card space-y-1 text-sm">${row('Subtotal', t.a.sub)}${S.igv ? row('IGV (18%)', t.a.igv) : ''}${row('Total a pagar al inicio', t.a.tot, 1)}</div>`);
+    v.push('<h2 class="text-lg font-bold text-[#141c31]">2. Pago inicial (único)</h2><p class="text-xs text-neutral-500">Desarrollo y puesta en marcha. Toca un servicio para editarlo. Si no agregas ninguno, esta sección no aparece en el PDF.</p>', itemList('initial'));
+    if (t.has.initial) v.push(`<div class="card space-y-1 text-sm">${row('Subtotal', t.a.sub)}${S.igv ? row('IGV (18%)', t.a.igv) : ''}${row('Total a pagar al inicio', t.a.tot, 1)}</div>`);
   } else if (step === 2) {
-    v.push('<h2 class="text-lg font-bold text-[#141c31]">3. Planes y servicios renovables</h2><p class="text-xs text-neutral-500">Dominios, hosting y suscripciones recurrentes.</p>', itemList('recurring'),
-      `<div class="card space-y-1 text-sm">${row('Total mensual' + (S.igv ? ' + IGV' : ''), t.mo.tot)}${row('Total anual' + (S.igv ? ' + IGV' : ''), t.an.tot)}</div>`);
+    v.push('<h2 class="text-lg font-bold text-[#141c31]">3. Planes y servicios renovables</h2><p class="text-xs text-neutral-500">Dominios, hosting y suscripciones recurrentes. Si no agregas ninguno, esta sección no aparece en el PDF.</p>', itemList('recurring'));
+    if (t.has.monthly || t.has.annual) v.push(`<div class="card space-y-1 text-sm">${t.has.monthly ? row('Total mensual' + (S.igv ? ' + IGV' : ''), t.mo.tot) : ''}${t.has.annual ? row('Total anual' + (S.igv ? ' + IGV' : ''), t.an.tot) : ''}</div>`);
   } else if (step === 3) {
     v.push('<h2 class="text-lg font-bold text-[#141c31]">4. Incluye y condiciones</h2>', textList('incl', 'Incluye', 'Lo que recibe el cliente con esta cotización.'), textList('cond', 'Condiciones', 'Plazos, formas de pago y términos.'));
   } else {
     v.push('<h2 class="text-lg font-bold text-[#141c31]">5. Resumen de pagos</h2>',
       `<div class="card space-y-1.5 text-sm"><p class="font-bold text-base text-[#141c31]">${esc(S.client) || 'Cotización'}</p><p class="text-neutral-500 pb-2">${esc(S.code)}</p>
-      ${row('Pago inicial (único)', t.a.tot)}${row('Renovación mensual', t.mo.tot)}${row('Renovación anual', t.an.tot)}${row('Total primer año', t.y1, 1)}
+      ${t.has.initial ? row('Pago inicial (único)', t.a.tot) : ''}${t.has.monthly ? row('Renovación mensual', t.mo.tot) : ''}${t.has.annual ? row('Renovación anual', t.an.tot) : ''}${row('Total primer año', t.y1, 1)}
       <p class="text-xs text-neutral-500 pt-1">${S.igv ? 'Montos con IGV incluido.' : 'Montos sin IGV.'}</p></div>`,
       '<div class="flex gap-2"><button class="btn sec flex-1 py-3" onclick="previewPDF()">Vista previa</button><button class="btn pri flex-1 py-3" onclick="exportPDF()">Descargar PDF</button></div>',
       '<button class="btn btn-pukio w-full py-2.5 mt-2" onclick="saveToDatabase()">Guardar cotización</button>');
@@ -223,97 +207,7 @@ function go(i) {
   window.scrollTo(0, 0);
 }
 
-function buildPDF() {
-  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: 'mm', format: 'a4' }), c = cfg();
-  const W = 210, M = 16, R = W - M, INK = [20, 28, 49], GR = [100, 116, 139];
-  let y = 18;
-  const need = h => { if (y + h > 282) { doc.addPage(); y = 18 } };
-  const txt = (t, x, yy, o = {}) => { doc.setFont('helvetica', o.b ? 'bold' : 'normal'); doc.setFontSize(o.s || 9); doc.setTextColor(...(o.c || INK)); doc.text(t, x, yy, { align: o.a || 'left' }) };
-  const now = new Date(), exp = new Date(now.getTime() + c.days * 864e5);
-
-  if (S.hdr.on && (S.hdr.name || S.hdr.l1 || S.hdr.l2)) {
-    if (S.hdr.name) { txt(S.hdr.name, M, y, { b: 1, s: 16 }); y += 5 }
-    [S.hdr.l1, S.hdr.l2].filter(Boolean).forEach(l => { txt(l, M, y, { s: 8.5, c: GR }); y += 4.5 }); y += 6;
-  }
-  txt('C O T I Z A C I Ó N', M, y, { b: 1, s: 17 }); y += 6.5;
-  txt(S.code, M, y, { b: 1, s: 10.5 }); y += 5.5;
-  txt(`Fecha ${fdate(now)}  ·  válida hasta ${fdate(exp)}`, M, y, { s: 9, c: GR }); y += 8;
-  txt('Cliente: ', M, y, { b: 1 }); txt(S.client || '-', M + 16, y); y += 5.5;
-  txt('Plan propuesto: ', M, y, { b: 1 }); txt(S.plan || '-', M + 27, y); y += 9;
-
-  const table = (list, withPer) => {
-    const body = [], n = withPer ? 5 : 4;
-    list.forEach(it => {
-      const u = unit(it, c.m), free = !u;
-      const r = [{ content: it.desc, styles: { fontStyle: 'bold' } }];
-      if (withPer) r.push(it.per === 'anual' ? 'Anual' : 'Mensual');
-      r.push(String(it.cant), free ? 'Incluido' : money(u), free ? 'Incluido' : money(u * it.cant));
-      if (it.detail) { r._pad = 1; body.push(r); const d = [{ content: it.detail, colSpan: n, styles: { fontSize: 8, textColor: GR } }]; d._last = 1; d._detail = 1; body.push(d) }
-      else { r._last = 1; body.push(r) }
-    });
-    const head = ['Descripción'].concat(withPer ? ['Periodo'] : [], ['Cant.', 'P. unitario', 'Importe']);
-    const cs = withPer ? { 1: { cellWidth: 20 }, 2: { cellWidth: 13, halign: 'center' }, 3: { cellWidth: 28, halign: 'right' }, 4: { cellWidth: 28, halign: 'right' } } : { 1: { cellWidth: 14, halign: 'center' }, 2: { cellWidth: 30, halign: 'right' }, 3: { cellWidth: 30, halign: 'right' } };
-    doc.autoTable({
-      startY: y, margin: { left: M, right: M }, head: [head], body, theme: 'plain',
-      styles: { font: 'helvetica', fontSize: 9, textColor: INK, cellPadding: { top: 2, bottom: 2, left: 1, right: 1 } },
-      headStyles: { fontStyle: 'bold', fontSize: 8.5, textColor: GR }, columnStyles: cs,
-      didParseCell: d => {
-        if (d.section === 'body') { if (d.row.raw._pad) d.cell.styles.cellPadding = { top: 2, bottom: 0.4, left: 1, right: 1 }; if (d.row.raw._detail) d.cell.styles.cellPadding = { top: 0, bottom: 2.2, left: 1, right: 1 } }
-        if (d.section === 'head' && d.column.index >= (withPer ? 2 : 1)) d.cell.styles.halign = d.column.index === (withPer ? 2 : 1) && withPer ? 'center' : (withPer ? 'right' : (d.column.index === 1 ? 'center' : 'right'))
-      },
-      didDrawCell: d => {
-        const yy = d.cell.y + d.cell.height;
-        if (d.section === 'head') { doc.setDrawColor(...INK); doc.setLineWidth(.35); doc.line(d.cell.x, yy, d.cell.x + d.cell.width, yy) }
-        else if (d.section === 'body' && d.row.raw._last) { doc.setDrawColor(215, 215, 215); doc.setLineWidth(.15); doc.line(d.cell.x, yy, d.cell.x + d.cell.width, yy) }
-      }
-    });
-    y = doc.lastAutoTable.finalY + 4;
-  };
-  const drawTotals = rows => {
-    rows.forEach(([l, v, b]) => {
-      need(7);
-      if (b) { doc.setDrawColor(...INK); doc.setLineWidth(.3); doc.line(R - 78, y - 3.8, R, y - 3.8) }
-      txt(l, R - 78, y, { b, s: b ? 10 : 9, c: b ? INK : GR }); txt(money(v), R, y, { b, s: b ? 10 : 9, a: 'right' }); y += b ? 7 : 5.2
-    }); y += 3
-  };
-
-  need(40); txt('1. Pago inicial (único)', M, y, { b: 1, s: 12 }); y += 4;
-  table(items.initial, false);
-  const a = sums(items.initial, c.m, c.igv);
-  drawTotals([['Subtotal', a.sub]].concat(c.igv ? [['IGV (18%)', a.igv]] : [], [['Total a pagar al inicio', a.tot, 1]]));
-
-  need(40); txt('2. Planes y servicios renovables', M, y, { b: 1, s: 12 }); y += 4;
-  table(items.recurring, true);
-  const mo = sums(items.recurring.filter(i => i.per === 'mensual'), c.m, c.igv), an = sums(items.recurring.filter(i => i.per === 'anual'), c.m, c.igv);
-  const blk = (t, s) => [[`Subtotal ${t}`, s.sub]].concat(c.igv ? [[`IGV (18%) ${t}`, s.igv]] : [], [[`Total ${t}${c.igv ? ' + IGV':''}`, s.tot, 1]]);
-  drawTotals(blk('mensual', mo).concat(blk('anual', an)));
-
-  const lines = id => S[id].map(s => s.replace('{dias}', c.days));
-  const bullets = (title, arr) => {
-    need(14); txt(title, M, y, { b: 1, s: 10.5 }); y += 5.5;
-    arr.forEach(l => {
-      const w = doc.setFont('helvetica', 'normal').setFontSize(9).splitTextToSize(l, R - M - 6); need(w.length * 4.2 + 2);
-      txt('•', M + 1, y); w.forEach(s => { txt(s, M + 6, y); y += 4.2 }); y += 0.8
-    }); y += 3
-  };
-  bullets('Incluye:', lines('incl'));
-
-  const y1 = a.tot + mo.tot * c.months + an.tot;
-  need(34); txt('Resumen de pagos', M, y, { b: 1, s: 12 }); y += 6;
-  [['Pago inicial (único)', a.tot], ['Renovación mensual (desde el mes 2 de servicio)', mo.tot], ['Renovación anual (dominios y similares)', an.tot]].forEach(([l, v]) => { txt(l, M, y); txt(money(v), R, y, { a: 'right' }); y += 5.5 });
-  doc.setDrawColor(...INK); doc.setLineWidth(.4); doc.line(M, y - 3.5, R, y - 3.5);
-  txt('Total primer año', M, y + 1, { b: 1, s: 11 }); txt(money(y1), R, y + 1, { b: 1, s: 11, a: 'right' }); y += 6;
-  txt(c.igv ? 'Montos con IGV incluido.' : 'Montos sin IGV.', R, y, { s: 8, c: GR, a: 'right' }); y += 9;
-
-  bullets('Condiciones', lines('cond'));
-
-  need(26); y += 12;
-  doc.setDrawColor(...INK); doc.setLineWidth(.3); doc.line(R - 60, y, R, y);
-  txt('Conformidad del cliente', R, y + 5, { s: 9, a: 'right' });
-
-  doc.fname = `${S.code}_${(S.client || 'cotizacion').replace(/[^\wÀ-ÿ]+/g, '_')}.pdf`;
-  return doc;
-}
+const buildPDF = () => buildQuotationPDF(current());
 
 function exportPDF() { const d = buildPDF(); d.save(d.fname) }
 function previewPDF() {
@@ -332,54 +226,50 @@ function previewPDF() {
 
 // ----------------- POSTGRESQL & PRISMA API -----------------
 
+const DEFAULT_COND = [
+  "Precios en soles (S/). Cotización válida por {dias} días desde su emisión.",
+  "50% al inicio del desarrollo y 50% a la entrega del proyecto.",
+  "Medios de pago: Transferencia BCP / Yape / Plin."
+];
+
+const api = async (url, method = 'GET', body) => {
+  const res = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Error al conectar con el servidor');
+  return res.json();
+};
+
+const payload = (over = {}) => ({
+  client: S.client || 'Cliente sin nombre',
+  code: S.code,
+  plan: S.plan || 'Propuesta Comercial',
+  days: S.days,
+  margin: S.margin,
+  igv: S.igv,
+  months: S.months,
+  hdr: S.hdr,
+  items,
+  incl: S.incl,
+  cond: S.cond,
+  ...over
+});
+
+// Mantiene ?id= en la URL para que recargar no pierda la cotización abierta
+const setUrlId = id => history.replaceState(null, '', id ? `?id=${encodeURIComponent(id)}` : location.pathname);
+
 async function fetchQuotations() {
   try {
-    const res = await fetch('/api/quotations');
-    if (!res.ok) throw new Error('Error al conectar con la base de datos');
-    allQuotations = await res.json();
+    allQuotations = await api('/api/quotations');
     if ($('badgeCount')) $('badgeCount').textContent = allQuotations.length;
-
-    // Check if URL has ?id=...
-    const urlParams = new URLSearchParams(window.location.search);
-    const idParam = urlParams.get('id');
-    if (idParam) {
-      const found = allQuotations.find(q => q.id === idParam);
-      if (found) loadQuotationIntoState(found);
-    } else {
-      await createNewQuotation();
-    }
   } catch (err) {
     console.error('Error cargando cotizaciones:', err);
   }
 }
 
-function loadQuotationIntoState(q) {
-  S.id = q.id;
-  S.code = q.code || '';
-  S.client = q.client || '';
-  S.plan = q.plan || '';
-  S.days = q.days || 15;
-  S.margin = q.margin !== undefined ? q.margin : 30;
-  S.igv = q.igv !== undefined ? q.igv : true;
-  S.months = q.months !== undefined ? q.months : 12;
-  S.hdr = {
-    on: Boolean(q.hdrOn),
-    name: q.hdrName || '',
-    l1: q.hdrL1 || '',
-    l2: q.hdrL2 || ''
-  };
-
-  items.initial = (q.items || [])
-    .filter(i => i.type === 'initial')
-    .map(i => ({ desc: i.desc, detail: i.detail || '', cant: i.cant || 1, cost: i.cost || 0 }));
-
-  items.recurring = (q.items || [])
-    .filter(i => i.type === 'recurring')
-    .map(i => ({ desc: i.desc, detail: i.detail || '', per: i.per || 'mensual', cant: i.cant || 1, cost: i.cost || 0 }));
-
-  S.incl = (q.includes || []).map(inc => inc.text);
-  S.cond = (q.conditions || []).map(con => con.text);
-
+function loadQuotationIntoState(r) {
+  const q = fromRecord(r);
+  S = { id: q.id, client: q.client, code: q.code, plan: q.plan, days: q.days, margin: q.margin, igv: q.igv, months: q.months, hdr: q.hdr, incl: q.incl, cond: q.cond };
+  items = { initial: q.initial, recurring: q.recurring };
+  setUrlId(q.id);
   render();
 }
 
@@ -389,40 +279,12 @@ async function saveToDatabase() {
   if (btn) btn.disabled = true;
   if (lbl) lbl.textContent = 'Guardando...';
 
-  const payload = {
-    client: S.client || 'Cliente sin nombre',
-    code: S.code,
-    plan: S.plan || 'Propuesta Comercial',
-    days: S.days,
-    margin: S.margin,
-    igv: S.igv,
-    months: S.months,
-    hdr: S.hdr,
-    items: items,
-    incl: S.incl,
-    cond: S.cond
-  };
-
   try {
-    let res;
-    if (S.id) {
-      res = await fetch(`/api/quotations/${S.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    } else {
-      res = await fetch('/api/quotations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-    }
-
-    if (!res.ok) throw new Error('Error al guardar en el servidor');
-    const saved = await res.json();
+    const saved = S.id ? await api(`/api/quotations/${S.id}`, 'PUT', payload()) : await api('/api/quotations', 'POST', payload());
     S.id = saved.id;
+    setUrlId(saved.id);
     await fetchQuotations();
+    render();
     alert('Cotización guardada exitosamente');
   } catch (err) {
     alert('Error al guardar: ' + err.message);
@@ -432,86 +294,26 @@ async function saveToDatabase() {
   }
 }
 
-function getNextCorrelativeCode() {
-  const currentYear = new Date().getFullYear();
-  let maxNum = 0;
-  const regex = new RegExp(`COT-${currentYear}-(\\d+)`, 'i');
-
-  allQuotations.forEach(q => {
-    if (!q.code) return;
-    const match = q.code.match(regex);
-    if (match && match[1]) {
-      const num = parseInt(match[1], 10);
-      if (num > maxNum) maxNum = num;
-    }
-  });
-
-  return `COT-${currentYear}-${String(maxNum + 1).padStart(3, '0')}`;
+async function nextCode() {
+  try {
+    return (await api('/api/next-code')).nextCode;
+  } catch (e) {
+    return `COT-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+  }
 }
 
 async function createNewQuotation() {
-  let nextCode = getNextCorrelativeCode();
-  try {
-    const res = await fetch('/api/next-code');
-    if (res.ok) {
-      const data = await res.json();
-      if (data.nextCode) nextCode = data.nextCode;
-    }
-  } catch (e) {}
-
-  S = {
-    id: null,
-    client: "",
-    code: nextCode,
-    plan: "",
-    days: 15,
-    margin: 30,
-    igv: true,
-    months: 12,
-    hdr: { on: false, name: "", l1: "", l2: "" },
-    incl: [],
-    cond: [
-      "Precios en soles (S/). Cotización válida por {dias} días desde su emisión.",
-      "50% al inicio del desarrollo y 50% a la entrega del proyecto.",
-      "Medios de pago: Transferencia BCP / Yape / Plin."
-    ]
-  };
-
-  items = {
-    initial: [],
-    recurring: []
-  };
-
+  S = { id: null, client: "", code: await nextCode(), plan: "", days: 15, margin: 30, igv: true, months: 12, hdr: { on: false, name: "", l1: "", l2: "" }, incl: [], cond: [...DEFAULT_COND] };
+  items = { initial: [], recurring: [] };
   step = 0;
+  setUrlId(null);
   render();
 }
 
+// Duplica lo que está en pantalla (incluye cambios sin guardar) con el siguiente correlativo
 async function duplicateCurrentQuotation() {
-  const baseCode = S.code || 'COT';
-  const newCode = `${baseCode}-COPIA`;
-  
-  const payload = {
-    client: S.client ? `${S.client} (Copia)` : 'Copia',
-    code: newCode,
-    plan: S.plan,
-    days: S.days,
-    margin: S.margin,
-    igv: S.igv,
-    months: S.months,
-    hdr: S.hdr,
-    items: items,
-    incl: S.incl,
-    cond: S.cond
-  };
-
   try {
-    const res = await fetch('/api/quotations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error('Error al duplicar');
-    const duplicated = await res.json();
+    const duplicated = await api('/api/quotations', 'POST', payload({ code: await nextCode(), client: S.client ? `${S.client} (Copia)` : 'Copia' }));
     await fetchQuotations();
     loadQuotationIntoState(duplicated);
     alert(`Cotización duplicada: ${duplicated.code}`);
@@ -520,6 +322,15 @@ async function duplicateCurrentQuotation() {
   }
 }
 
-// Initial Boot
-render();
-fetchQuotations();
+async function init() {
+  render();
+  await fetchQuotations();
+  const id = new URLSearchParams(location.search).get('id');
+  if (id) {
+    try { return loadQuotationIntoState(await api(`/api/quotations/${encodeURIComponent(id)}`)) }
+    catch (err) { alert('No se pudo abrir la cotización: ' + err.message) }
+  }
+  await createNewQuotation();
+}
+
+init();

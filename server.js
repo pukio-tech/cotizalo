@@ -24,6 +24,54 @@ app.get('/cotizaciones', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'cotizaciones.html'));
 });
 
+// Number with fallback only when missing/invalid (0 is a valid value)
+const num = (v, def, parse = parseFloat) => {
+  const n = parse(v, 10);
+  return Number.isFinite(n) ? n : def;
+};
+
+const WITH_RELATIONS = {
+  items: { orderBy: { order: 'asc' } },
+  includes: { orderBy: { order: 'asc' } },
+  conditions: { orderBy: { order: 'asc' } }
+};
+
+// Maps the editor payload to Prisma data (shared by create and update)
+function toQuotationData(body) {
+  const { client, code, plan, days, margin, igv, months, hdr, items, incl, cond } = body;
+  const toItem = type => (it, idx) => ({
+    type,
+    desc: it.desc || '',
+    detail: it.detail || '',
+    per: type === 'recurring' ? (it.per === 'anual' ? 'anual' : 'mensual') : null,
+    cant: Math.max(1, num(it.cant, 1, parseInt)),
+    cost: Math.max(0, num(it.cost, 0)),
+    order: idx
+  });
+  const initialItems = (items?.initial || []).map(toItem('initial'));
+  const recurringItems = (items?.recurring || []).map(toItem('recurring')).map(it => ({ ...it, order: initialItems.length + it.order }));
+  const toText = (text, idx) => ({ text: typeof text === 'string' ? text : (text?.text || ''), order: idx });
+
+  return {
+    fields: {
+      code: code || undefined,
+      client: client || undefined,
+      plan: plan || undefined,
+      days: Math.max(0, num(days, 15, parseInt)),
+      margin: num(margin, 30),
+      igv: igv !== undefined ? Boolean(igv) : true,
+      months: Math.min(12, Math.max(0, num(months, 12, parseInt))),
+      hdrOn: Boolean(hdr?.on),
+      hdrName: hdr?.name || '',
+      hdrL1: hdr?.l1 || '',
+      hdrL2: hdr?.l2 || ''
+    },
+    items: [...initialItems, ...recurringItems],
+    includes: (incl || []).map(toText).filter(r => r.text.trim()),
+    conditions: (cond || []).map(toText).filter(r => r.text.trim())
+  };
+}
+
 // API Routes
 
 // GET /api/next-code - Get next correlative quotation code
@@ -57,11 +105,7 @@ app.get('/api/quotations', async (req, res) => {
   try {
     const quotations = await prisma.quotation.findMany({
       orderBy: { updatedAt: 'desc' },
-      include: {
-        items: true,
-        includes: true,
-        conditions: true
-      }
+      include: WITH_RELATIONS
     });
     res.json(quotations);
   } catch (error) {
@@ -76,11 +120,7 @@ app.get('/api/quotations/:id', async (req, res) => {
     const { id } = req.params;
     const quotation = await prisma.quotation.findUnique({
       where: { id },
-      include: {
-        items: { orderBy: { order: 'asc' } },
-        includes: { orderBy: { order: 'asc' } },
-        conditions: { orderBy: { order: 'asc' } }
-      }
+      include: WITH_RELATIONS
     });
     if (!quotation) {
       return res.status(404).json({ error: 'Cotización no encontrada' });
@@ -95,62 +135,18 @@ app.get('/api/quotations/:id', async (req, res) => {
 // POST /api/quotations - Create a new quotation
 app.post('/api/quotations', async (req, res) => {
   try {
-    const { client, code, plan, days, margin, igv, months, hdr, items, incl, cond } = req.body;
-
-    const initialItems = (items?.initial || []).map((it, idx) => ({
-      type: 'initial',
-      desc: it.desc || '',
-      detail: it.detail || '',
-      per: null,
-      cant: parseInt(it.cant, 10) || 1,
-      cost: parseFloat(it.cost) || 0,
-      order: idx
-    }));
-
-    const recurringItems = (items?.recurring || []).map((it, idx) => ({
-      type: 'recurring',
-      desc: it.desc || '',
-      detail: it.detail || '',
-      per: it.per || 'mensual',
-      cant: parseInt(it.cant, 10) || 1,
-      cost: parseFloat(it.cost) || 0,
-      order: initialItems.length + idx
-    }));
-
-    const allItems = [...initialItems, ...recurringItems];
-
-    const includeRecords = (incl || []).map((text, idx) => ({
-      text: typeof text === 'string' ? text : text.text,
-      order: idx
-    }));
-
-    const conditionRecords = (cond || []).map((text, idx) => ({
-      text: typeof text === 'string' ? text : text.text,
-      order: idx
-    }));
-
+    const d = toQuotationData(req.body);
     const created = await prisma.quotation.create({
       data: {
-        code: code || `COT-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
-        client: client || 'Nuevo Cliente',
-        plan: plan || 'Nuevo Plan',
-        days: parseInt(days, 10) || 15,
-        margin: parseFloat(margin) || 30,
-        igv: igv !== undefined ? Boolean(igv) : true,
-        months: parseInt(months, 10) || 12,
-        hdrOn: Boolean(hdr?.on),
-        hdrName: hdr?.name || '',
-        hdrL1: hdr?.l1 || '',
-        hdrL2: hdr?.l2 || '',
-        items: { create: allItems },
-        includes: { create: includeRecords },
-        conditions: { create: conditionRecords }
+        ...d.fields,
+        code: d.fields.code || `COT-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`,
+        client: d.fields.client || 'Nuevo Cliente',
+        plan: d.fields.plan || 'Nuevo Plan',
+        items: { create: d.items },
+        includes: { create: d.includes },
+        conditions: { create: d.conditions }
       },
-      include: {
-        items: { orderBy: { order: 'asc' } },
-        includes: { orderBy: { order: 'asc' } },
-        conditions: { orderBy: { order: 'asc' } }
-      }
+      include: WITH_RELATIONS
     });
 
     res.status(201).json(created);
@@ -164,39 +160,7 @@ app.post('/api/quotations', async (req, res) => {
 app.put('/api/quotations/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { client, code, plan, days, margin, igv, months, hdr, items, incl, cond } = req.body;
-
-    const initialItems = (items?.initial || []).map((it, idx) => ({
-      type: 'initial',
-      desc: it.desc || '',
-      detail: it.detail || '',
-      per: null,
-      cant: parseInt(it.cant, 10) || 1,
-      cost: parseFloat(it.cost) || 0,
-      order: idx
-    }));
-
-    const recurringItems = (items?.recurring || []).map((it, idx) => ({
-      type: 'recurring',
-      desc: it.desc || '',
-      detail: it.detail || '',
-      per: it.per || 'mensual',
-      cant: parseInt(it.cant, 10) || 1,
-      cost: parseFloat(it.cost) || 0,
-      order: initialItems.length + idx
-    }));
-
-    const allItems = [...initialItems, ...recurringItems];
-
-    const includeRecords = (incl || []).map((text, idx) => ({
-      text: typeof text === 'string' ? text : text.text,
-      order: idx
-    }));
-
-    const conditionRecords = (cond || []).map((text, idx) => ({
-      text: typeof text === 'string' ? text : text.text,
-      order: idx
-    }));
+    const d = toQuotationData(req.body);
 
     const updated = await prisma.$transaction(async (tx) => {
       // Delete old relations
@@ -208,26 +172,12 @@ app.put('/api/quotations/:id', async (req, res) => {
       return await tx.quotation.update({
         where: { id },
         data: {
-          code: code || undefined,
-          client: client || undefined,
-          plan: plan || undefined,
-          days: parseInt(days, 10) || 15,
-          margin: parseFloat(margin) || 30,
-          igv: igv !== undefined ? Boolean(igv) : true,
-          months: parseInt(months, 10) || 12,
-          hdrOn: Boolean(hdr?.on),
-          hdrName: hdr?.name || '',
-          hdrL1: hdr?.l1 || '',
-          hdrL2: hdr?.l2 || '',
-          items: { create: allItems },
-          includes: { create: includeRecords },
-          conditions: { create: conditionRecords }
+          ...d.fields,
+          items: { create: d.items },
+          includes: { create: d.includes },
+          conditions: { create: d.conditions }
         },
-        include: {
-          items: { orderBy: { order: 'asc' } },
-          includes: { orderBy: { order: 'asc' } },
-          conditions: { orderBy: { order: 'asc' } }
-        }
+        include: WITH_RELATIONS
       });
     });
 
