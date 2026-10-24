@@ -10,6 +10,7 @@ Plan de evolución por fases: [docs/PLAN.md](docs/PLAN.md).
 - **Tailwind CSS v4** + **shadcn/ui** (tokens de marca PUKIO y modo oscuro en `src/app/globals.css`)
 - **dnd-kit** para reordenar servicios con mouse, toque o teclado
 - **Prisma 5** sobre PostgreSQL (mismo esquema que la versión Express: no requiere migrar datos)
+- **Better Auth** (correo + contraseña, empresas) para el inicio de sesión y el multiempresa
 - **zod** para validar todo lo que llega a las Server Actions
 - **jsPDF** + autotable para el PDF (se genera en el navegador)
 - **Vitest** para dominio y PDF
@@ -17,7 +18,7 @@ Plan de evolución por fases: [docs/PLAN.md](docs/PLAN.md).
 ## Requisitos
 
 - Node.js 20.9 o superior
-- `DATABASE_URL` en `.env`
+- Variables en `.env`: copia [.env.example](.env.example) (`DATABASE_URL`, `BETTER_AUTH_SECRET`, …)
 
 ## Desarrollo
 
@@ -41,13 +42,19 @@ src/
     (app)/cotizaciones/page.tsx      # listado con búsqueda y paginación en servidor
     (app)/cotizaciones/nueva/        # editor de cotización nueva
     (app)/cotizaciones/[id]/         # editor de cotización existente
+    (app)/ajustes/                   # empresa (cabecera, logo) y catálogo
+    (auth)/ingresar, (auth)/registro # inicio de sesión y registro con empresa
+    p/[token]/                       # enlace público para el cliente
   features/quotations/
     domain/      # esquema zod, cálculos, reglas de visibilidad de secciones (+ tests)
     pdf/         # generador del PDF (+ tests) y carga perezosa en el cliente
     server/      # repositorio Prisma (único acceso a BD) y Server Actions
     components/  # editor, listado, vista previa del PDF
   components/    # sidebar y componentes de UI (shadcn)
-  lib/           # cliente Prisma, utilidades
+  features/organization/  # datos de la empresa y catálogo
+  features/auth/          # formularios de ingreso y registro
+  lib/           # Prisma, Better Auth (auth.ts), sesión/DAL (session.ts)
+  proxy.ts       # redirección rápida a /ingresar sin sesión
 prisma/schema.prisma
 ```
 
@@ -69,10 +76,13 @@ Están en `src/features/quotations/domain/sections.ts` y cubiertas por tests.
 ## Base de datos
 
 ```bash
-npm run db:push      # sincroniza el esquema
-npm run db:studio    # interfaz gráfica
+npm run db:migrate:dev   # crea y aplica una migración en desarrollo
+npm run db:migrate       # aplica las migraciones pendientes (producción)
+npm run db:studio        # interfaz gráfica
 ```
+
+Los cambios de esquema van siempre como migraciones en `prisma/migrations`. Para el primer despliegue de la Fase 4 ver [docs/PLAN.md](docs/PLAN.md#cómo-desplegar-la-fase-4-una-sola-vez).
 
 ## Despliegue (Vercel)
 
-`vercel.json` fija el framework en Next.js. La variable `DATABASE_URL` del proyecto se mantiene. Las URLs antiguas (`/index.html?id=…`, `/cotizaciones.html`) redirigen a las nuevas.
+`vercel.json` fija el framework en Next.js. Variables necesarias: `DATABASE_URL` y `BETTER_AUTH_SECRET` (ver `.env.example`). Las URLs antiguas (`/index.html?id=…`, `/cotizaciones.html`) redirigen a las nuevas.

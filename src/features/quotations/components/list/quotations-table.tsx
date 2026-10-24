@@ -4,8 +4,12 @@ import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { toISODate } from "../../domain/dates";
 import { money } from "../../domain/format";
+import { effectiveStatus } from "../../domain/status";
+import { StatusBadge } from "../status-badge";
 import type { ListParams } from "../../domain/list-params";
+import { requireViewer } from "@/lib/session";
 import { listQuotations } from "../../server/repository";
 import { RowActions } from "./row-actions";
 
@@ -13,9 +17,11 @@ const dateFmt = new Intl.DateTimeFormat("es-PE", { day: "2-digit", month: "short
 
 export async function QuotationsTable({ params }: { params: ListParams }) {
   await connection();
-  const { query, page, sort, range } = params;
-  const { rows, total, pageCount } = await listQuotations(params);
-  const filtered = !!query || range !== "todo";
+  const { organization } = await requireViewer();
+  const { query, page, sort, range, status } = params;
+  const { rows, total, pageCount } = await listQuotations(organization.id, params);
+  const filtered = !!query || range !== "todo" || !!status;
+  const today = toISODate(new Date());
 
   if (!rows.length) {
     return (
@@ -24,7 +30,7 @@ export async function QuotationsTable({ params }: { params: ListParams }) {
         <div>
           <p className="font-semibold">{filtered ? "Sin resultados" : "Aún no hay cotizaciones"}</p>
           <p className="text-sm text-muted-foreground">
-            {query ? `Nada coincide con «${query}».` : filtered ? "No hay cotizaciones en ese rango de fechas." : "Crea la primera y aparecerá aquí."}
+            {query ? `Nada coincide con «${query}».` : filtered ? "No hay cotizaciones con esos filtros." : "Crea la primera y aparecerá aquí."}
           </p>
         </div>
         {!filtered && (
@@ -41,6 +47,7 @@ export async function QuotationsTable({ params }: { params: ListParams }) {
       ...(query && { q: query }),
       ...(sort !== "recientes" && { orden: sort }),
       ...(range !== "todo" && { fecha: range }),
+      ...(status && { estado: status }),
       ...(p > 1 && { page: String(p) }),
     })}`;
 
@@ -54,6 +61,7 @@ export async function QuotationsTable({ params }: { params: ListParams }) {
               <TableHead>Código</TableHead>
               <TableHead>Cliente</TableHead>
               <TableHead>Plan propuesto</TableHead>
+              <TableHead>Estado</TableHead>
               <TableHead className="text-center">Validez</TableHead>
               <TableHead className="text-right">Total primer año</TableHead>
               <TableHead className="text-right">Actualizado</TableHead>
@@ -72,6 +80,9 @@ export async function QuotationsTable({ params }: { params: ListParams }) {
                 </TableCell>
                 <TableCell className="font-medium">{r.client || <span className="text-muted-foreground italic">Sin cliente</span>}</TableCell>
                 <TableCell className="text-muted-foreground">{r.plan || "-"}</TableCell>
+                <TableCell>
+                  <StatusBadge status={effectiveStatus(r, today)} />
+                </TableCell>
                 <TableCell className="text-center text-muted-foreground">{r.days} días</TableCell>
                 <TableCell className="text-right font-semibold tabular-nums">{money(r.firstYear)}</TableCell>
                 <TableCell className="text-right text-muted-foreground tabular-nums">{dateFmt.format(new Date(r.updatedAt))}</TableCell>
@@ -89,7 +100,10 @@ export async function QuotationsTable({ params }: { params: ListParams }) {
         {rows.map((r) => (
           <li key={r.id} className="rounded-xl border p-3">
             <Link href={`/cotizaciones/${r.id}`} className="block">
-              <p className="font-mono text-sm font-bold">{r.code}</p>
+              <p className="flex items-center justify-between gap-2">
+                <span className="font-mono text-sm font-bold">{r.code}</span>
+                <StatusBadge status={effectiveStatus(r, today)} />
+              </p>
               <p className="font-medium">{r.client || "Sin cliente"}</p>
               <p className="text-sm text-muted-foreground">
                 {r.plan || "-"} · {dateFmt.format(new Date(r.updatedAt))}

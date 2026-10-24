@@ -35,8 +35,13 @@ interface TextOpts {
   align?: "left" | "right" | "center";
 }
 
+export interface PdfOptions {
+  /** Logo de la empresa como data URL (PNG/JPEG); se muestra junto a la cabecera */
+  logo?: string | null;
+}
+
 /** Genera el PDF de la cotización. Solo dibuja las secciones con contenido. */
-export function buildQuotationPDF(q: QuoteInput, date: Date, { jsPDF, autoTable }: PdfLib) {
+export function buildQuotationPDF(q: QuoteInput, date: Date, { jsPDF, autoTable }: PdfLib, { logo }: PdfOptions = {}) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const totals = quoteTotals(q);
   const show = visibleSections(q, totals);
@@ -77,22 +82,36 @@ export function buildQuotationPDF(q: QuoteInput, date: Date, { jsPDF, autoTable 
   const titleX = issuer.length ? R : M;
   const titleAlign = issuer.length ? "right" : "left";
   let iy = y;
+  let ix = M;
+  // Logo a la izquierda de los datos del emisor (si no se puede leer, se omite sin romper el PDF)
+  if (q.hdr.on && logo) {
+    try {
+      const props = doc.getImageProperties(logo);
+      const h = 14;
+      const w = Math.min(36, (h * props.width) / props.height);
+      doc.addImage(logo, /^data:image\/png/i.test(logo) ? "PNG" : "JPEG", M, y - 6, w, h);
+      ix = M + w + 4;
+      iy = Math.max(iy, y);
+    } catch {}
+  }
+  const issuerWidth = 95 - (ix - M);
   if (q.hdr.on && q.hdr.name) {
-    wrap(q.hdr.name, 95, 15, true)
+    wrap(q.hdr.name, issuerWidth, 15, true)
       .slice(0, 2)
       .forEach((l) => {
-        text(l, M, iy, { bold: true, size: 15 });
+        text(l, ix, iy, { bold: true, size: 15 });
         iy += 6;
       });
   }
   [q.hdr.l1, q.hdr.l2]
     .filter((l) => q.hdr.on && l)
     .forEach((l) => {
-      wrap(l, 95, 8.5).forEach((s) => {
-        text(s, M, iy, { size: 8.5, color: GRAY });
+      wrap(l, issuerWidth, 8.5).forEach((s) => {
+        text(s, ix, iy, { size: 8.5, color: GRAY });
         iy += 4.5;
       });
     });
+  if (ix > M) iy = Math.max(iy, y + 10);
   text("C O T I Z A C I Ó N", titleX, y, { bold: true, size: 17, align: titleAlign });
   text(q.code || "COT", titleX, y + 6.5, { bold: true, size: 10.5, color: BRAND_TEXT, align: titleAlign });
   text(`Fecha: ${formatDate(date)}`, titleX, y + 12, { color: GRAY, align: titleAlign });

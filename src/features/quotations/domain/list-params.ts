@@ -1,4 +1,6 @@
-// Parámetros del listado (?q=&page=&orden=&fecha=), compartidos por la página, los filtros y el repositorio.
+import { STATUSES, type Status } from "./schema";
+
+// Parámetros del listado (?q=&page=&orden=&fecha=&estado=), compartidos por la página, los filtros y el repositorio.
 
 export const SORTS = {
   recientes: "Más recientes",
@@ -8,7 +10,7 @@ export const SORTS = {
 } as const;
 
 export const RANGES = {
-  todo: "Todas las fechas",
+  todo: "Cualquier fecha",
   "7d": "Últimos 7 días",
   "30d": "Últimos 30 días",
   anio: "Este año",
@@ -22,6 +24,8 @@ export interface ListParams {
   page: number;
   sort: Sort;
   range: Range;
+  /** Estado guardado; sin valor = todos */
+  status?: Status;
 }
 
 const pick = <T extends string>(value: unknown, options: Record<T, string>, fallback: T): T =>
@@ -33,6 +37,7 @@ export function parseListParams(sp: Record<string, string | string[] | undefined
     page: Math.max(1, parseInt(typeof sp.page === "string" ? sp.page : "1", 10) || 1),
     sort: pick(sp.orden, SORTS, "recientes"),
     range: pick(sp.fecha, RANGES, "todo"),
+    status: typeof sp.estado === "string" && (STATUSES as readonly string[]).includes(sp.estado) ? (sp.estado as Status) : undefined,
   };
 }
 

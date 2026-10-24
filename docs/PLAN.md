@@ -130,13 +130,55 @@ src/
 
 **Pendiente para la Fase 4:** filtros por estado (requieren el campo de estado en la BD).
 
-## Fase 4 · Producto escalable
+## Fase 4 · Producto escalable ✅ (rama `next`, requiere migrar la BD)
 
-- **Autenticación** (Auth.js o Clerk) y protección de todas las rutas/acciones.
-- Multiempresa: `Organization` con datos de cabecera y logo; cada cotización pertenece a una.
-- Catálogo de servicios reutilizables (precio base, detalle, periodicidad).
-- Estados de cotización: borrador → enviada → aceptada / rechazada / vencida.
-- Enlace público de solo lectura para que el cliente vea y acepte la propuesta.
+- [x] **Autenticación con Better Auth:**
+  - Correo y contraseña.
+  - Sesiones de 30 días.
+  - `DISABLE_SIGNUP` para cerrar el registro.
+- [x] **Protección de rutas:**
+  - `proxy.ts` redirige rápido a `/ingresar`.
+  - La verificación real está en la capa de acceso `src/lib/session.ts`.
+  - Todas las Server Actions sacan la empresa de la sesión.
+- [x] **Multiempresa:**
+  - Cada cotización y servicio del catálogo pertenece a una empresa.
+  - El repositorio exige la empresa en todas sus consultas: otra empresa no puede ver, editar, borrar ni compartir.
+  - El correlativo y el código son únicos por empresa.
+- [x] **Datos de la empresa** en Ajustes: nombre, líneas de cabecera y logo. El logo se reduce en el navegador y va en el PDF y en el enlace público.
+- [x] **Catálogo de servicios:** se administra en Ajustes y se usa desde el editor con "Agregar desde el catálogo".
+- [x] **Estados** borrador / enviada / aceptada / rechazada. "Vencida" se calcula sola según la fecha de emisión y la validez. Hay filtro por estado en el listado.
+- [x] **Fecha de emisión editable** (hora de Lima). Las cotizaciones existentes conservan su fecha de creación.
+- [x] **Enlace público `/p/[token]`:**
+  - El cliente ve la propuesta, descarga el PDF y la acepta con su nombre.
+  - Nunca recibe el costo base ni el margen.
+  - Se puede dejar de compartir.
+- [x] **Migraciones con Prisma Migrate:**
+  - Línea base `0_init` igual al esquema actual de producción.
+  - Migración `1_auth_empresas`, solo aditiva.
+- [x] **Tests:** 41 (aislamiento entre empresas, enlace público, aceptación, estados, fechas, PDF con logo).
+- [x] **Probado en el navegador:**
+  - Registro y adopción de las cotizaciones antiguas.
+  - Ajustes, catálogo, compartir y aceptación.
+  - Cierre de sesión y una segunda empresa sin acceso a la primera.
+
+**Pendiente (Fase 5):**
+
+- Invitar miembros a la empresa: el plugin ya lo soporta, pero necesita envío de correos.
+- Recuperar contraseña: también requiere correo.
+
+### Cómo desplegar la Fase 4 (una sola vez)
+
+1. En Vercel → Settings → Environment Variables (Production y Preview):
+   - `BETTER_AUTH_SECRET`: **obligatoria**. Genera una con `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
+   - `COTIZALO_OWNER_EMAIL`: tu correo. Al registrarte, tu empresa adopta todas las cotizaciones creadas antes del inicio de sesión.
+   - Opcional: `DISABLE_SIGNUP=true` después de crear tu cuenta, si no quieres registros abiertos.
+2. Con la `DATABASE_URL` de Neon en tu `.env` local:
+   ```bash
+   npm run db:baseline   # marca 0_init como aplicada (la BD ya tiene esas tablas)
+   npm run db:migrate    # aplica 1_auth_empresas
+   ```
+   La migración solo agrega tablas y columnas. La versión de `main` sigue funcionando con la BD migrada, así que puedes migrar antes de fusionar.
+3. Despliega la rama `next`, entra a `/registro` con el correo de `COTIZALO_OWNER_EMAIL` y crea tu empresa: verás tus cotizaciones de siempre.
 
 ## Fase 5 · Extras
 
@@ -149,5 +191,5 @@ src/
 ## Decisiones pendientes
 
 1. ¿Next.js en el mismo repositorio (rama `next`) o en uno nuevo? → recomendado: mismo repo.
-2. Proveedor de autenticación (Auth.js con email/Google vs. Clerk).
-3. Fecha del PDF: ¿fecha de creación o fecha de emisión editable?
+2. ~~Proveedor de autenticación~~ → **Better Auth** (sin servicio externo; admite Google y 2FA más adelante).
+3. ~~Fecha del PDF~~ → **fecha de emisión editable**, por defecto la de creación.

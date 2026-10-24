@@ -46,6 +46,16 @@ describe("buildQuotationPDF", () => {
     expect(render(quote())).toContain("Cotización COT-2026-010");
   });
 
+  it("incrusta el logo de la empresa y no falla con un logo inválido", () => {
+    // PNG de 1×1 px
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const hdr = { on: true, name: "PUKIO", l1: "", l2: "" };
+    const withLogo = buildQuotationPDF(quote({ hdr }), new Date(), { jsPDF, autoTable }, { logo: png }).doc.output();
+    expect(withLogo).toContain("/Subtype /Image");
+    const broken = buildQuotationPDF(quote({ hdr }), new Date(), { jsPDF, autoTable }, { logo: "data:image/png;base64,AAAA" }).doc.output();
+    expect(broken).toContain("PUKIO");
+  });
+
   it("nombra el archivo con código y cliente", () => {
     const { fileName } = buildQuotationPDF(quote({ client: "Café Ñandú SAC" }), new Date(), { jsPDF, autoTable });
     expect(fileName).toBe("COT-2026-010_Café_Ñandú_SAC.pdf");

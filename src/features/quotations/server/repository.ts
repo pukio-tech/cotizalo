@@ -1,15 +1,25 @@
 import "server-only";
-import type { Prisma } from "@prisma/client";
+import { randomBytes } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { quoteTotals, type Cents } from "../domain/calc";
 import { rangeStart, type ListParams, type Sort } from "../domain/list-params";
-import type { QuoteInput } from "../domain/schema";
+import type { QuoteInput, Status } from "../domain/schema";
 import { toQuote, toRecordData, withRelations } from "./mappers";
 
-// Acceso a datos de cotizaciones. Es el único módulo que habla con Prisma;
-// en la Fase 4 aquí se filtrará por organización/usuario.
+// Acceso a datos de cotizaciones. Es el único módulo que habla con Prisma sobre cotizaciones y
+// TODAS sus funciones exigen la empresa (orgId): una cotización de otra empresa no existe para ti.
 
 export const PAGE_SIZE = 20;
+
+type Db = Prisma.TransactionClient | typeof prisma;
+
+/** Error de "no existe o no es tuya" (mismo mensaje en ambos casos, para no filtrar información). */
+export class NotFoundError extends Error {
+  constructor() {
+    super("La cotización ya no existe");
+  }
+}
 
 export interface QuotationRow {
   id: string;
@@ -17,6 +27,8 @@ export interface QuotationRow {
   client: string;
   plan: string;
   days: number;
+  status: Status;
+  issuedAt: string;
   updatedAt: string;
   /** Total del primer año en céntimos (mismo cálculo que el PDF). */
   firstYear: Cents;
@@ -29,10 +41,11 @@ const ORDER: Record<Sort, Prisma.QuotationOrderByWithRelationInput> = {
   cliente: { client: "asc" },
 };
 
-export async function listQuotations({ query = "", page = 1, sort = "recientes", range = "todo" }: Partial<ListParams> = {}) {
+export async function listQuotations(orgId: string, { query = "", page = 1, sort = "recientes", range = "todo", status }: Partial<ListParams> = {}) {
   const q = query.trim();
   const since = rangeStart(range, new Date());
   const where: Prisma.QuotationWhereInput = {
+    organizationId: orgId,
     ...(q && {
       OR: [
         { client: { contains: q, mode: "insensitive" } },
@@ -40,7 +53,8 @@ export async function listQuotations({ query = "", page = 1, sort = "recientes",
         { plan: { contains: q, mode: "insensitive" } },
       ],
     }),
-    ...(since && { createdAt: { gte: since } }),
+    ...(since && { issuedAt: { gte: since } }),
+    ...(status && { status }),
   };
   const [records, total] = await Promise.all([
     prisma.quotation.findMany({
@@ -53,34 +67,37 @@ export async function listQuotations({ query = "", page = 1, sort = "recientes",
     prisma.quotation.count({ where }),
   ]);
   return {
-    rows: records.map((r): QuotationRow => ({
-      id: r.id,
-      code: r.code,
-      client: r.client,
-      plan: r.plan,
-      days: r.days,
-      updatedAt: r.updatedAt.toISOString(),
-      firstYear: quoteTotals(toQuote(r)).firstYear,
-    })),
+    rows: records.map((r): QuotationRow => {
+      const quote = toQuote(r);
+      return {
+        id: r.id,
+        code: r.code,
+        client: r.client,
+        plan: r.plan,
+        days: r.days,
+        status: quote.status,
+        issuedAt: quote.issuedAt,
+        updatedAt: r.updatedAt.toISOString(),
+        firstYear: quoteTotals(quote).firstYear,
+      };
+    }),
     total,
     pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
   };
 }
 
-export const countQuotations = () => prisma.quotation.count();
+export const countQuotations = (orgId: string) => prisma.quotation.count({ where: { organizationId: orgId } });
 
-export async function getQuotation(id: string) {
-  const r = await prisma.quotation.findUnique({ where: { id }, include: withRelations });
+export async function getQuotation(orgId: string, id: string) {
+  const r = await prisma.quotation.findFirst({ where: { id, organizationId: orgId }, include: withRelations });
   return r ? toQuote(r) : null;
 }
 
-type Db = Prisma.TransactionClient | typeof prisma;
-
-/** Siguiente correlativo del año: COT-2026-001, 002… Solo es definitivo dentro de `createQuotation`. */
-export async function nextCode(year: number, db: Db = prisma) {
+/** Siguiente correlativo del año en la empresa: COT-2026-001, 002… Solo es definitivo dentro de `createQuotation`. */
+export async function nextCode(orgId: string, year: number, db: Db = prisma) {
   const prefix = `COT-${year}-`;
   const codes = await db.quotation.findMany({
-    where: { code: { startsWith: prefix, mode: "insensitive" } },
+    where: { organizationId: orgId, code: { startsWith: prefix, mode: "insensitive" } },
     select: { code: true },
   });
   const max = codes.reduce((m, { code }) => {
@@ -90,29 +107,31 @@ export async function nextCode(year: number, db: Db = prisma) {
   return prefix + String(max + 1).padStart(3, "0");
 }
 
-// Clave fija del advisory lock que serializa la asignación de correlativos entre peticiones
+// Clave del advisory lock que serializa la asignación de correlativos (una por empresa)
 const CODE_LOCK_KEY = 727_120_001;
 const AUTO_CODE = /^COT-\d{4}-\d+$/i;
 
 /**
  * Crea la cotización asignando el correlativo de forma atómica: dentro de la transacción
- * se toma un lock de Postgres, así dos usuarios guardando a la vez nunca reciben el mismo código.
+ * se toma un lock de Postgres por empresa, así dos usuarios guardando a la vez nunca reciben el mismo código.
  * - `assignCode: true` siempre asigna el siguiente (duplicar).
  * - Si el código es automático (COT-AAAA-NNN) y ya lo tomó otra cotización, se asigna el siguiente.
  * - Un código personalizado repetido sí falla (P2002) para que el usuario lo corrija.
  */
-export async function createQuotation(input: QuoteInput, { assignCode = false } = {}) {
+export async function createQuotation(orgId: string, input: QuoteInput, { assignCode = false } = {}) {
   return prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(${CODE_LOCK_KEY})`);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CODE_LOCK_KEY}::int, hashtext(${orgId}))`;
     let code = input.code;
-    const taken = async () => (await tx.quotation.count({ where: { code: { equals: code, mode: "insensitive" } } })) > 0;
+    const taken = async () =>
+      (await tx.quotation.count({ where: { organizationId: orgId, code: { equals: code, mode: "insensitive" } } })) > 0;
     if (assignCode || (AUTO_CODE.test(code) && (await taken()))) {
-      code = await nextCode(new Date().getFullYear(), tx);
+      code = await nextCode(orgId, new Date().getFullYear(), tx);
     }
     const d = toRecordData({ ...input, code });
     return tx.quotation.create({
       data: {
         ...d.fields,
+        organizationId: orgId,
         items: { create: d.items },
         includes: { create: d.includes },
         conditions: { create: d.conditions },
@@ -122,9 +141,16 @@ export async function createQuotation(input: QuoteInput, { assignCode = false } 
   });
 }
 
-export async function updateQuotation(id: string, input: QuoteInput) {
+/** Comprueba que la cotización sea de la empresa (dentro de la transacción) o lanza NotFoundError. */
+async function assertOwned(db: Db, orgId: string, id: string) {
+  const found = await db.quotation.findFirst({ where: { id, organizationId: orgId }, select: { id: true } });
+  if (!found) throw new NotFoundError();
+}
+
+export async function updateQuotation(orgId: string, id: string, input: QuoteInput) {
   const d = toRecordData(input);
   return prisma.$transaction(async (tx) => {
+    await assertOwned(tx, orgId, id);
     await tx.quotationItem.deleteMany({ where: { quotationId: id } });
     await tx.quotationInclude.deleteMany({ where: { quotationId: id } });
     await tx.quotationCondition.deleteMany({ where: { quotationId: id } });
@@ -141,4 +167,54 @@ export async function updateQuotation(id: string, input: QuoteInput) {
   });
 }
 
-export const deleteQuotation = (id: string) => prisma.quotation.delete({ where: { id }, select: { id: true } });
+export async function deleteQuotation(orgId: string, id: string) {
+  const { count } = await prisma.quotation.deleteMany({ where: { id, organizationId: orgId } });
+  if (!count) throw new NotFoundError();
+}
+
+/** Cambia solo el estado (p. ej. desde el listado). */
+export async function setStatus(orgId: string, id: string, status: Status) {
+  const { count } = await prisma.quotation.updateMany({ where: { id, organizationId: orgId }, data: { status } });
+  if (!count) throw new NotFoundError();
+}
+
+// ─── Enlace público ──────────────────────────────────────────────────────────
+
+/** Devuelve el token del enlace público, creándolo si no existe. Compartir la marca como "enviada". */
+export async function shareQuotation(orgId: string, id: string) {
+  return prisma.$transaction(async (tx) => {
+    const q = await tx.quotation.findFirst({ where: { id, organizationId: orgId }, select: { publicToken: true, status: true } });
+    if (!q) throw new NotFoundError();
+    const publicToken = q.publicToken ?? randomBytes(18).toString("base64url");
+    await tx.quotation.update({
+      where: { id },
+      data: { publicToken, ...(q.status === "borrador" && { status: "enviada" }) },
+    });
+    return publicToken;
+  });
+}
+
+/** Deja de compartir: el enlace anterior deja de funcionar. */
+export async function revokeShare(orgId: string, id: string) {
+  const { count } = await prisma.quotation.updateMany({ where: { id, organizationId: orgId }, data: { publicToken: null } });
+  if (!count) throw new NotFoundError();
+}
+
+/** Cotización vista por el cliente a través del enlace (sin sesión). */
+export async function getPublicQuotation(token: string) {
+  const r = await prisma.quotation.findUnique({
+    where: { publicToken: token },
+    include: { ...withRelations, organization: { select: { name: true, logo: true } } },
+  });
+  if (!r || !r.organization) return null;
+  return { quote: toQuote(r), organization: r.organization };
+}
+
+/** Aceptación del cliente: solo si sigue "enviada" (la vigencia la valida quien llama). */
+export async function acceptPublicQuotation(token: string, acceptedBy: string) {
+  const { count } = await prisma.quotation.updateMany({
+    where: { publicToken: token, status: "enviada" },
+    data: { status: "aceptada", acceptedAt: new Date(), acceptedBy },
+  });
+  return count > 0;
+}

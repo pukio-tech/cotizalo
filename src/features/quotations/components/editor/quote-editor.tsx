@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Download, Eye, FilePlus2, History, Loader2, Save } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Download, Eye, FilePlus2, History, Loader2, Save, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,11 +23,16 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { quoteTotals } from "../../domain/calc";
+import { toISODate } from "../../domain/dates";
 import { emptyQuote } from "../../domain/defaults";
 import { money } from "../../domain/format";
-import type { Quote, QuoteInput } from "../../domain/schema";
+import { STATUSES, type Quote, type QuoteInput, type Status } from "../../domain/schema";
+import { effectiveStatus, STATUS_LABELS } from "../../domain/status";
 import { downloadQuotationPdf, quotationPdfUrl } from "../../pdf/client";
-import { duplicateQuotation, saveQuotation } from "../../server/actions";
+import { duplicateQuotation, saveQuotation, shareQuotation } from "../../server/actions";
+import { StatusBadge } from "../status-badge";
+import { CatalogPicker } from "./catalog-picker";
+import { ShareDialog } from "./share-dialog";
 import { PdfPreviewDialog, type PdfPreview } from "../pdf-preview-dialog";
 import { Field, NumberInput } from "./fields";
 import { ItemsEditor } from "./items-editor";
@@ -37,16 +43,18 @@ import { useDraft } from "./use-draft";
 
 const STEPS = ["Datos", "Pago inicial", "Renovables", "Incluye y condiciones", "Resumen"] as const;
 
-const toInput = ({ id, createdAt, ...input }: Quote): QuoteInput => input;
+const toInput = ({ id, createdAt, publicToken, acceptedAt, acceptedBy, ...input }: Quote): QuoteInput => input;
 
-export function QuoteEditor({ initial }: { initial: Quote }) {
+/** `logo`: logo de la empresa (data URL) para el PDF. */
+export function QuoteEditor({ initial, logo = null }: { initial: Quote; logo?: string | null }) {
   const router = useRouter();
   const [quote, setQuote] = useState(initial);
   const [saved, setSaved] = useState(() => JSON.stringify(initial));
   const [step, setStep] = useState(0);
   const [preview, setPreview] = useState<PdfPreview | null>(null);
-  const [busy, setBusy] = useState<"save" | "copy" | "pdf" | null>(null);
+  const [busy, setBusy] = useState<"save" | "copy" | "pdf" | "share" | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [, startTransition] = useTransition();
 
   const totals = useMemo(() => quoteTotals(quote), [quote]);
@@ -106,7 +114,7 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
     if (quote.id) router.push("/cotizaciones/nueva");
     else {
       // Ya estamos en /nueva: el código sigue disponible porque no se guardó
-      const fresh = emptyQuote(initial.code);
+      const fresh = emptyQuote(initial.code, { hdr: initial.hdr });
       setQuote(fresh);
       setSaved(JSON.stringify(fresh));
       setStep(0);
@@ -115,10 +123,24 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
 
   const showPdf = () =>
     run("pdf", async () => {
-      const { url, fileName } = await quotationPdfUrl(quote);
+      const { url, fileName } = await quotationPdfUrl(quote, logo);
       setPreview({ url, fileName, title: `${quote.code} · ${quote.client || "Cotización"}` });
     });
-  const downloadPdf = () => run("pdf", () => downloadQuotationPdf(quote));
+  const downloadPdf = () => run("pdf", () => downloadQuotationPdf(quote, logo));
+
+  // Compartir crea el enlace público; si estaba en borrador, el servidor la pasa a "enviada"
+  const share = () =>
+    run("share", async () => {
+      if (!quote.id) return;
+      const r = await shareQuotation(quote.id);
+      if (!r.ok) return void toast.error(r.error);
+      const status: Status = quote.status === "borrador" ? "enviada" : quote.status;
+      setQuote((q) => ({ ...q, publicToken: r.data.token, status }));
+      // Lo que cambió el servidor no cuenta como cambio sin guardar
+      setSaved((prev) => JSON.stringify({ ...JSON.parse(prev), publicToken: r.data.token, status }));
+      setSharing(true);
+    });
+  const today = toISODate(new Date());
 
   const go = (i: number) => {
     setStep(i);
@@ -161,6 +183,7 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
         <div className="min-w-0">
           <p className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
             {quote.id ? "Cotización guardada" : "Nueva cotización"}
+            <StatusBadge status={effectiveStatus(quote, today)} className="ml-2 normal-case" />
             {dirty && <span className="ml-2 rounded bg-brand-soft px-1.5 py-0.5 text-brand-foreground normal-case">Cambios sin guardar</span>}
           </p>
           <h1 className="truncate text-lg font-extrabold tracking-tight md:text-xl">
@@ -170,6 +193,14 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button variant="outline" onClick={() => newQuote()}>
             <FilePlus2 /> Nueva
+          </Button>
+          <Button
+            variant="outline"
+            onClick={share}
+            disabled={!quote.id || dirty || busy === "share"}
+            title={!quote.id || dirty ? "Guarda la cotización para compartirla" : "Compartir enlace con el cliente"}
+          >
+            {busy === "share" ? <Loader2 className="animate-spin" /> : <Share2 />} Compartir
           </Button>
           <Button variant="outline" onClick={duplicate} disabled={busy === "copy"}>
             {busy === "copy" ? <Loader2 className="animate-spin" /> : <Copy />} Duplicar
@@ -241,6 +272,23 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
                   <Field id="plan" label="Plan propuesto">
                     <Input id="plan" value={quote.plan} onChange={(e) => set({ plan: e.target.value })} placeholder="Ej. Web corporativa" maxLength={200} />
                   </Field>
+                  <Field id="issuedAt" label="Fecha de emisión" hint="La validez se cuenta desde esta fecha.">
+                    <Input id="issuedAt" type="date" value={quote.issuedAt} onChange={(e) => e.target.value && set({ issuedAt: e.target.value })} required />
+                  </Field>
+                  <Field id="status" label="Estado">
+                    <Select value={quote.status} onValueChange={(v) => set({ status: v as Status })}>
+                      <SelectTrigger id="status" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STATUSES.map((st) => (
+                          <SelectItem key={st} value={st}>
+                            {STATUS_LABELS[st]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
                   <Field id="days" label="Días de validez">
                     <NumberInput id="days" value={quote.days} onChange={(n) => set({ days: Math.min(365, Math.max(0, Math.round(n))) })} min={0} max={365} step={1} />
                   </Field>
@@ -295,6 +343,11 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
             <>
               <StepIntro title="Pago inicial (único)" text="Desarrollo y puesta en marcha. Si no agregas servicios, esta sección no aparece en el PDF." />
               <ItemsEditor items={quote.initial} margin={quote.margin} withPeriod={false} onChange={(initial) => set({ initial })} />
+              <CatalogPicker
+                type="initial"
+                margin={quote.margin}
+                onPick={({ desc, detail, cant, cost }) => setQuote((q) => ({ ...q, initial: [...q.initial, { desc, detail, cant, cost }] }))}
+              />
               {totals.has.initial && (
                 <Card size="sm">
                   <CardContent className="space-y-1 text-sm">
@@ -311,6 +364,7 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
             <>
               <StepIntro title="Planes y servicios renovables" text="Dominios, hosting y suscripciones. Si no agregas ninguno, esta sección no aparece en el PDF." />
               <ItemsEditor items={quote.recurring} margin={quote.margin} withPeriod onChange={(recurring) => set({ recurring })} />
+              <CatalogPicker type="recurring" margin={quote.margin} onPick={(item) => setQuote((q) => ({ ...q, recurring: [...q.recurring, item] }))} />
               {(totals.has.monthly || totals.has.annual) && (
                 <Card size="sm">
                   <CardContent className="space-y-1 text-sm">
@@ -409,7 +463,7 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
             </TabsContent>
             <TabsContent value="pdf" className="space-y-3">
               <div className="h-[calc(100dvh-13rem)] min-h-96">
-                <LivePdfPreview quote={quote} />
+                <LivePdfPreview quote={quote} logo={logo} />
               </div>
               {pdfButtons}
             </TabsContent>
@@ -445,6 +499,19 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {quote.id && (
+        <ShareDialog
+          quotationId={quote.id}
+          token={sharing ? (quote.publicToken ?? null) : null}
+          onClose={() => setSharing(false)}
+          onRevoked={() => {
+            setSharing(false);
+            setQuote((q) => ({ ...q, publicToken: null }));
+            setSaved((prev) => JSON.stringify({ ...JSON.parse(prev), publicToken: null }));
+          }}
+        />
+      )}
 
       <PdfPreviewDialog preview={preview} onClose={() => setPreview(null)} />
     </>

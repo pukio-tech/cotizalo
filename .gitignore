@@ -42,3 +42,6 @@ next-env.d.ts
 
 # windows
 Thumbs.db
+
+# plantilla de variables (sin secretos)
+!.env.example

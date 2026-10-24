@@ -1,5 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Esquema de Cotízalo. Los cambios se aplican con migraciones (prisma/migrations):
+//   desarrollo:  npx prisma migrate dev --name <cambio>
+//   producción:  npm run db:migrate   (prisma migrate deploy)
 
 generator client {
   provider = "prisma-client-js"
@@ -10,25 +11,156 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Quotation {
-  id         String               @id @default(cuid())
-  code       String               @unique
-  client     String
-  plan       String
-  days       Int                  @default(15)
-  margin     Float                @default(30)
-  igv        Boolean              @default(true)
-  months     Int                  @default(12)
-  hdrOn      Boolean              @default(false)
-  hdrName    String               @default("")
-  hdrL1      String               @default("")
-  hdrL2      String               @default("")
-  items      QuotationItem[]
-  includes   QuotationInclude[]
-  conditions QuotationCondition[]
-  createdAt  DateTime             @default(now())
-  updatedAt  DateTime             @updatedAt
+// ─── Autenticación y empresas (tablas que usa Better Auth) ───────────────────
 
+model User {
+  id            String       @id
+  name          String
+  email         String       @unique
+  emailVerified Boolean      @default(false)
+  image         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now()) @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  members       Member[]
+  invitations   Invitation[]
+
+  @@map("users")
+}
+
+model Session {
+  id                   String   @id
+  expiresAt            DateTime
+  token                String   @unique
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeOrganizationId String?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+/// Empresa: cada cotización y servicio del catálogo pertenece a una.
+model Organization {
+  id          String        @id
+  name        String
+  slug        String        @unique
+  /// Logo como data URL (PNG/JPEG, hasta ~200 KB); se usa en el PDF
+  logo        String?
+  createdAt   DateTime
+  metadata    String?
+  /// Líneas de contacto de la cabecera del PDF (propias de Cotízalo)
+  headerLine1 String        @default("") @map("header_line1")
+  headerLine2 String        @default("") @map("header_line2")
+  members     Member[]
+  invitations Invitation[]
+  quotations  Quotation[]
+  catalog     CatalogItem[]
+
+  @@map("organizations")
+}
+
+model Member {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("member")
+  createdAt      DateTime
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("members")
+}
+
+model Invitation {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String       @default("pending")
+  expiresAt      DateTime
+  createdAt      DateTime     @default(now())
+  inviterId      String
+  user           User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitations")
+}
+
+// ─── Cotizaciones ────────────────────────────────────────────────────────────
+
+model Quotation {
+  id             String               @id @default(cuid())
+  /// Nulo solo en cotizaciones creadas antes de la Fase 4 (sin empresa asignada)
+  organizationId String?              @map("organization_id")
+  organization   Organization?        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String
+  client         String
+  plan           String
+  /// borrador | enviada | aceptada | rechazada  ("vencida" se calcula con la fecha de emisión)
+  status         String               @default("borrador")
+  issuedAt       DateTime             @default(now()) @map("issued_at")
+  days           Int                  @default(15)
+  margin         Float                @default(30)
+  igv            Boolean              @default(true)
+  months         Int                  @default(12)
+  hdrOn          Boolean              @default(false)
+  hdrName        String               @default("")
+  hdrL1          String               @default("")
+  hdrL2          String               @default("")
+  /// Token del enlace público de solo lectura (nulo = no compartida)
+  publicToken    String?              @unique @map("public_token")
+  acceptedAt     DateTime?            @map("accepted_at")
+  acceptedBy     String?              @map("accepted_by")
+  items          QuotationItem[]
+  includes       QuotationInclude[]
+  conditions     QuotationCondition[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([organizationId, code])
+  @@index([organizationId, updatedAt])
   @@map("quotations")
 }
 
@@ -36,10 +168,10 @@ model QuotationItem {
   id          String    @id @default(cuid())
   quotationId String    @map("quotation_id")
   quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-  type        String    // 'initial' or 'recurring'
+  type        String // 'initial' or 'recurring'
   desc        String
   detail      String    @default("")
-  per         String?   // 'mensual', 'anual', or null
+  per         String? // 'mensual', 'anual', or null
   cant        Int       @default(1)
   cost        Float     @default(0)
   order       Int       @default(0)
@@ -65,4 +197,22 @@ model QuotationCondition {
   order       Int       @default(0)
 
   @@map("quotation_conditions")
+}
+
+/// Servicio reutilizable del catálogo de la empresa
+model CatalogItem {
+  id             String       @id @default(cuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  /// initial | recurring
+  type           String
+  desc           String
+  detail         String       @default("")
+  per            String?
+  cost           Float        @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@map("catalog_items")
 }

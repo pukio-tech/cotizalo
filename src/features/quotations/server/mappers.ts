@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
-import type { Period, Quote, QuoteInput } from "../domain/schema";
+import { fromISODate, toISODate } from "../domain/dates";
+import { STATUSES, type Period, type Quote, type QuoteInput, type Status } from "../domain/schema";
 
 export const withRelations = {
   items: { orderBy: { order: "asc" } },
@@ -16,6 +17,11 @@ export function toQuote(r: QuotationRecord): Quote {
     id: r.id,
     createdAt: r.createdAt.toISOString(),
     code: r.code,
+    status: (STATUSES as readonly string[]).includes(r.status) ? (r.status as Status) : "borrador",
+    issuedAt: toISODate(r.issuedAt),
+    publicToken: r.publicToken,
+    acceptedAt: r.acceptedAt?.toISOString() ?? null,
+    acceptedBy: r.acceptedBy,
     client: r.client,
     plan: r.plan,
     days: r.days,
@@ -42,6 +48,8 @@ export function toRecordData(q: QuoteInput) {
   return {
     fields: {
       code: q.code,
+      status: q.status,
+      issuedAt: fromISODate(q.issuedAt),
       client: q.client || "Cliente sin nombre",
       plan: q.plan || "Propuesta comercial",
       days: q.days,

@@ -51,8 +51,8 @@ export function RowActions({ id, code, client }: { id: string; code: string; cli
     run("pdf", async () => {
       const r = await loadQuotation(id);
       if (!r.ok) return void toast.error(r.error);
-      const q = r.data;
-      const { url, fileName } = await quotationPdfUrl(q);
+      const { quote: q, logo } = r.data;
+      const { url, fileName } = await quotationPdfUrl(q, logo);
       setPreview({ url, fileName, title: `${q.code} · ${q.client || "Cotización"}` });
     });
 

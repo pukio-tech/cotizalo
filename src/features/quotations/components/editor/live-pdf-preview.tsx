@@ -6,7 +6,7 @@ import type { Quote } from "../../domain/schema";
 import { quotationPdfUrl } from "../../pdf/client";
 
 /** PDF que se regenera mientras se edita (con una pausa para no rehacerlo en cada tecla). */
-export function LivePdfPreview({ quote }: { quote: Quote }) {
+export function LivePdfPreview({ quote, logo }: { quote: Quote; logo?: string | null }) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const current = useRef<string | null>(null);
@@ -15,7 +15,7 @@ export function LivePdfPreview({ quote }: { quote: Quote }) {
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const next = (await quotationPdfUrl(quote)).url;
+        const next = (await quotationPdfUrl(quote, logo)).url;
         if (cancelled) return URL.revokeObjectURL(next);
         if (current.current) URL.revokeObjectURL(current.current);
         current.current = next;
@@ -29,7 +29,7 @@ export function LivePdfPreview({ quote }: { quote: Quote }) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [quote]);
+  }, [quote, logo]);
 
   useEffect(() => () => void (current.current && URL.revokeObjectURL(current.current)), []);
 

@@ -1,14 +1,24 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { FilePlus2, Files } from "lucide-react";
+import { FilePlus2, Files, Settings } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { countQuotations } from "@/features/quotations/server/repository";
+import { getViewer } from "@/lib/session";
 import { NavLink } from "./nav-link";
 import { ThemeToggle } from "./theme";
+import { UserMenu } from "./user-menu";
 
 async function QuotationCount() {
   await connection();
-  const count = await countQuotations();
-  return <>{count}</>;
+  const viewer = await getViewer();
+  return <>{viewer ? await countQuotations(viewer.organization.id) : "–"}</>;
+}
+
+async function SidebarUser() {
+  await connection();
+  const viewer = await getViewer();
+  if (!viewer) return null;
+  return <UserMenu name={viewer.name} email={viewer.email} organization={viewer.organization.name} />;
 }
 
 export function AppSidebar() {
@@ -26,7 +36,7 @@ export function AppSidebar() {
       </div>
 
       <p className="mx-2.5 mb-1.5 hidden text-[11px] font-bold tracking-wider text-muted-foreground uppercase md:block">Operación</p>
-      <nav aria-label="Principal" className="flex gap-1.5 md:flex-col">
+      <nav aria-label="Principal" className="flex flex-wrap gap-1.5 md:flex-col md:flex-nowrap">
         <NavLink href="/cotizaciones/nueva" icon={<FilePlus2 />}>
           Nueva cotización
         </NavLink>
@@ -42,17 +52,16 @@ export function AppSidebar() {
         >
           Cotizaciones
         </NavLink>
+        <NavLink href="/ajustes" icon={<Settings />}>
+          Ajustes
+        </NavLink>
       </nav>
 
-      <div className="mt-auto hidden items-center justify-between gap-2 border-t border-sidebar-border px-1 pt-4 md:flex">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-full bg-brand-soft text-xs font-extrabold text-brand-foreground">CZ</div>
-          <div>
-            <p className="text-xs leading-tight font-bold whitespace-nowrap">Cotízalo Pro</p>
-            <p className="text-[11px] font-medium text-muted-foreground">PUKIO</p>
-          </div>
-        </div>
-        <ThemeToggle />
+      <div className="mt-4 flex flex-col gap-3 border-t border-sidebar-border px-1 pt-4 md:mt-auto">
+        <ThemeToggle className="hidden self-start md:inline-flex" />
+        <Suspense fallback={<Skeleton className="h-8 w-full" />}>
+          <SidebarUser />
+        </Suspense>
       </div>
     </aside>
   );
