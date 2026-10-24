@@ -1,68 +1,88 @@
-# Cotizador Pro (Node.js + Express + Prisma + PostgreSQL)
+# Cotízalo (Next.js + Prisma + PostgreSQL)
 
-Sistema de generación y administración de cotizaciones con almacenamiento persistente en **PostgreSQL (Neon)** utilizando **Prisma ORM**, cálculo dinámico de márgenes e IGV, y exportación a **PDF**.
+Generación y administración de cotizaciones con margen, IGV y exportación a **PDF**. Base de datos **PostgreSQL (Neon)** con **Prisma ORM**.
 
----
+Plan de evolución por fases: [docs/PLAN.md](docs/PLAN.md).
 
-## 🚀 Requisitos previos
+## Stack
 
-- **Node.js**: v18 o superior
-- Base de datos **PostgreSQL** configurada en `.env`
+- **Next.js 16** (App Router, Cache Components, Server Actions) + **React 19** + **TypeScript**
+- **Tailwind CSS v4** + **shadcn/ui** (tokens de marca PUKIO y modo oscuro en `src/app/globals.css`)
+- **dnd-kit** para reordenar servicios con mouse, toque o teclado
+- **Prisma 5** sobre PostgreSQL (mismo esquema que la versión Express: no requiere migrar datos)
+- **Better Auth** (correo + contraseña, empresas) para el inicio de sesión y el multiempresa
+- **zod** para validar todo lo que llega a las Server Actions
+- **jsPDF** + autotable para el PDF (se genera en el navegador)
+- **Vitest** para dominio y PDF
 
----
+## Requisitos
 
-## 🛠️ Instalación y Configuración
+- Node.js 20.9 o superior
+- Variables en `.env`: copia [.env.example](.env.example) (`DATABASE_URL`, `BETTER_AUTH_SECRET`, …)
 
-1. **Instalar dependencias:**
-   ```bash
-   npm install
-   ```
+## Desarrollo
 
-2. **Sincronizar esquema de base de datos con Prisma:**
-   ```bash
-   npx prisma db push
-   ```
+```bash
+npm install
+npm run dev          # http://localhost:3000
+npm test             # unitarios + integración (Postgres en memoria con PGlite, no toca el .env)
+npm run lint
+npm run typecheck
+npm run build        # prisma generate + next build
+```
 
-3. **Iniciar el servidor:**
-   ```bash
-   # Modo desarrollo (con recarga automática):
-   npm run dev
+> npm 11 pide aprobar los scripts de instalación: los de Prisma ya están aprobados en `allowScripts` de `package.json`.
 
-   # Modo producción:
-   npm start
-   ```
+## Estructura
 
-4. Abrir en el navegador:
-   ```
-   http://localhost:3000
-   ```
+```
+src/
+  app/
+    (app)/layout.tsx                 # sidebar + contenido
+    (app)/cotizaciones/page.tsx      # listado con búsqueda y paginación en servidor
+    (app)/cotizaciones/nueva/        # editor de cotización nueva
+    (app)/cotizaciones/[id]/         # editor de cotización existente
+    (app)/ajustes/                   # empresa (cabecera, logo) y catálogo
+    (auth)/ingresar, (auth)/registro # inicio de sesión y registro con empresa
+    p/[token]/                       # enlace público para el cliente
+  features/quotations/
+    domain/      # esquema zod, cálculos, reglas de visibilidad de secciones (+ tests)
+    pdf/         # generador del PDF (+ tests) y carga perezosa en el cliente
+    server/      # repositorio Prisma (único acceso a BD) y Server Actions
+    components/  # editor, listado, vista previa del PDF
+  components/    # sidebar y componentes de UI (shadcn)
+  features/organization/  # datos de la empresa y catálogo
+  features/auth/          # formularios de ingreso y registro
+  lib/           # Prisma, Better Auth (auth.ts), sesión/DAL (session.ts)
+  proxy.ts       # redirección rápida a /ingresar sin sesión
+prisma/schema.prisma
+```
 
----
+## Reglas del PDF
 
-## 🗄️ Modelo de Base de Datos (Prisma)
+Solo se dibujan las secciones con contenido y se renumeran:
 
-El archivo `prisma/schema.prisma` contiene los siguientes modelos:
+- **Pago inicial** y **Planes y servicios renovables**: solo si tienen servicios (dentro de renovables, el bloque mensual/anual solo si tiene ítems).
+- **Incluye** y **Condiciones**: solo si tienen puntos.
+- **Resumen de pagos**: solo las filas presentes, y solo si hay más de un tipo de pago o mensualidades.
 
-- **`Quotation`**: Cabecera de la cotización (código único, cliente, plan, días de validez, margen, IGV, meses, cabecera PDF).
-- **`QuotationItem`**: Servicios y costos tanto iniciales (`type: 'initial'`) como recurrentes (`type: 'recurring'`, mensual/anual).
-- **`QuotationInclude`**: Puntos incluidos en la propuesta.
-- **`QuotationCondition`**: Condiciones comerciales y formas de pago.
+Están en `src/features/quotations/domain/sections.ts` y cubiertas por tests.
 
----
+## Montos y correlativo
 
-## 📦 Comandos útiles de Prisma
+- Todos los cálculos se hacen en **céntimos** (`domain/calc.ts`): unitario redondeado al céntimo, importe = unitario × cantidad, IGV redondeado una vez sobre el subtotal.
+- El correlativo `COT-AAAA-NNN` se asigna dentro de una transacción con un *advisory lock* de Postgres (`server/repository.ts`), así que nunca se repite aunque dos personas guarden a la vez.
 
-- **Abrir interfaz gráfica de BD (Prisma Studio):**
-  ```bash
-  npm run db:studio
-  ```
+## Base de datos
 
-- **Actualizar cliente de Prisma:**
-  ```bash
-  npm run db:generate
-  ```
+```bash
+npm run db:migrate:dev   # crea y aplica una migración en desarrollo
+npm run db:migrate       # aplica las migraciones pendientes (producción)
+npm run db:studio        # interfaz gráfica
+```
 
-- **Sincronizar cambios del esquema:**
-  ```bash
-  npm run db:push
-  ```
+Los cambios de esquema van siempre como migraciones en `prisma/migrations`. Para el primer despliegue de la Fase 4 ver [docs/PLAN.md](docs/PLAN.md#cómo-desplegar-la-fase-4-una-sola-vez).
+
+## Despliegue (Vercel)
+
+`vercel.json` fija el framework en Next.js. Variables necesarias: `DATABASE_URL` y `BETTER_AUTH_SECRET` (ver `.env.example`). Las URLs antiguas (`/index.html?id=…`, `/cotizaciones.html`) redirigen a las nuevas.
