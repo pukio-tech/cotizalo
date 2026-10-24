@@ -7,7 +7,8 @@ Plan de evolución por fases: [docs/PLAN.md](docs/PLAN.md).
 ## Stack
 
 - **Next.js 16** (App Router, Cache Components, Server Actions) + **React 19** + **TypeScript**
-- **Tailwind CSS v4** + **shadcn/ui** (tokens de marca PUKIO en `src/app/globals.css`)
+- **Tailwind CSS v4** + **shadcn/ui** (tokens de marca PUKIO y modo oscuro en `src/app/globals.css`)
+- **dnd-kit** para reordenar servicios con mouse, toque o teclado
 - **Prisma 5** sobre PostgreSQL (mismo esquema que la versión Express: no requiere migrar datos)
 - **zod** para validar todo lo que llega a las Server Actions
 - **jsPDF** + autotable para el PDF (se genera en el navegador)

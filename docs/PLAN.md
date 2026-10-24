@@ -104,14 +104,31 @@ src/
 - Fecha de emisión editable (`issuedAt`).
 - Logo en el PDF (necesita almacenamiento de archivos).
 
-## Fase 3 · Rediseño de UI con design system
+## Fase 3 · Rediseño de UI con design system ✅ (rama `next`)
 
-- Tokens de diseño (color, tipografía Plus Jakarta Sans, espaciado, radios, sombras) en Tailwind; modo oscuro opcional.
-- Editor en dos columnas: formulario a la izquierda, **vista previa en vivo** del resumen/PDF a la derecha (en móvil, pestañas).
-- Edición inline de servicios (sin modales para todo), arrastrar para reordenar.
-- Toasts en vez de `alert()`, diálogo de confirmación accesible, aviso de cambios sin guardar, autoguardado de borrador.
-- Listado: tabla en desktop / tarjetas en móvil, filtros por estado y fecha, estados vacíos y *skeletons*.
-- Accesibilidad: labels, foco visible, navegación por teclado, contraste AA.
+- [x] **Tokens de diseño** en `globals.css`: paleta PUKIO, `brand` / `brand-soft` / `brand-contrast`, sombras `card` / `float` y colores del logo fijos.
+- [x] **Modo oscuro** (Claro / Oscuro / Sistema) sin destello: un script en `<head>` aplica el tema antes del primer pintado, como recomienda la guía de Next 16.
+- [x] **Editor en dos columnas** con panel lateral en pestañas: *Resumen* y *PDF en vivo*, que se regenera mientras editas.
+- [x] **Móvil:** barra inferior fija con el total del primer año y los botones PDF y Guardar.
+- [x] **Servicios editables en línea:** la tarjeta se expande, sin modales.
+- [x] **Reordenar** servicios, "Incluye" y "Condiciones" arrastrando o con teclado (dnd-kit, con anuncios en español para lectores de pantalla).
+- [x] **Borrador automático** en el navegador por cotización, con aviso para restaurarlo o descartarlo.
+- [x] **Ctrl/⌘+S** para guardar.
+- [x] **Diálogo propio** en lugar de `confirm()`.
+- [x] Contadores en los pasos y aviso si falta el cliente en el resumen.
+- [x] **Listado:**
+  - Columna "Total primer año".
+  - Orden: recientes, antiguas, código, cliente.
+  - Filtro por fecha: 7 días, 30 días, este año.
+  - Todo en la URL, para poder compartirla.
+- [x] **Accesibilidad:**
+  - Enlace "Saltar al contenido".
+  - Ayudas de los campos asociadas con `aria-describedby`.
+  - Foco visible.
+  - Respeta `prefers-reduced-motion`.
+  - Contraste AA en ambos temas.
+
+**Pendiente para la Fase 4:** filtros por estado (requieren el campo de estado en la BD).
 
 ## Fase 4 · Producto escalable
 

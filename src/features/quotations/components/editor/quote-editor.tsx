@@ -1,10 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Copy, Download, Eye, FilePlus2, Loader2, Save } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, Copy, Download, Eye, FilePlus2, History, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -12,14 +23,17 @@ import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { quoteTotals } from "../../domain/calc";
 import { emptyQuote } from "../../domain/defaults";
+import { money } from "../../domain/format";
 import type { Quote, QuoteInput } from "../../domain/schema";
 import { downloadQuotationPdf, quotationPdfUrl } from "../../pdf/client";
 import { duplicateQuotation, saveQuotation } from "../../server/actions";
 import { PdfPreviewDialog, type PdfPreview } from "../pdf-preview-dialog";
 import { Field, NumberInput } from "./fields";
 import { ItemsEditor } from "./items-editor";
+import { LivePdfPreview } from "./live-pdf-preview";
 import { SummaryRows, TotalRow } from "./summary-panel";
 import { TextListEditor } from "./text-list-editor";
+import { useDraft } from "./use-draft";
 
 const STEPS = ["Datos", "Pago inicial", "Renovables", "Incluye y condiciones", "Resumen"] as const;
 
@@ -32,11 +46,13 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
   const [step, setStep] = useState(0);
   const [preview, setPreview] = useState<PdfPreview | null>(null);
   const [busy, setBusy] = useState<"save" | "copy" | "pdf" | null>(null);
+  const [confirmNew, setConfirmNew] = useState(false);
   const [, startTransition] = useTransition();
 
   const totals = useMemo(() => quoteTotals(quote), [quote]);
   const dirty = JSON.stringify(quote) !== saved;
   const set = (patch: Partial<Quote>) => setQuote((q) => ({ ...q, ...patch }));
+  const draft = useDraft(initial, quote, dirty);
 
   // Aviso al cerrar o recargar la pestaña con cambios sin guardar
   useEffect(() => {
@@ -70,6 +86,7 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
       const next = { ...quote, id: r.data.id, code: r.data.code };
       setQuote(next);
       setSaved(JSON.stringify(next));
+      draft.clear(quote.id);
       // La recién creada pasa a su URL propia (y se recarga desde la BD)
       if (!quote.id) router.replace(`/cotizaciones/${r.data.id}`);
     });
@@ -83,8 +100,9 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
       router.push(`/cotizaciones/${r.data.id}`);
     });
 
-  const newQuote = () => {
-    if (dirty && !confirm("Hay cambios sin guardar. ¿Descartarlos y empezar una nueva cotización?")) return;
+  const newQuote = (force = false) => {
+    if (dirty && !force) return setConfirmNew(true);
+    draft.clear();
     if (quote.id) router.push("/cotizaciones/nueva");
     else {
       // Ya estamos en /nueva: el código sigue disponible porque no se guardó
@@ -106,6 +124,24 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
     setStep(i);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  // Ctrl/Cmd + S guarda (siempre con la versión más reciente de save)
+  const saveRef = useRef(save);
+  useEffect(() => {
+    saveRef.current = save;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        saveRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const counts = [null, quote.initial.length, quote.recurring.length, quote.incl.length + quote.cond.length, null];
 
   const pdfButtons = (
     <div className="flex gap-2">
@@ -132,17 +168,41 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
           </h1>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={newQuote}>
+          <Button variant="outline" onClick={() => newQuote()}>
             <FilePlus2 /> Nueva
           </Button>
           <Button variant="outline" onClick={duplicate} disabled={busy === "copy"}>
             {busy === "copy" ? <Loader2 className="animate-spin" /> : <Copy />} Duplicar
           </Button>
-          <Button onClick={save} disabled={busy === "save"}>
+          <Button onClick={save} disabled={busy === "save"} aria-keyshortcuts="Control+S" title="Guardar (Ctrl+S)" className="max-lg:hidden">
             {busy === "save" ? <Loader2 className="animate-spin" /> : <Save />} Guardar
           </Button>
         </div>
       </div>
+
+      {draft.pending && (
+        <div role="status" className="mb-4 flex flex-col gap-3 rounded-xl border border-brand/40 bg-brand-soft px-4 py-3 text-sm text-brand-foreground sm:flex-row sm:items-center">
+          <History className="size-5 shrink-0" aria-hidden />
+          <p className="flex-1">
+            Hay un borrador sin guardar de esta cotización ({new Date(draft.pending.savedAt).toLocaleString("es-PE", { dateStyle: "medium", timeStyle: "short" })}).
+          </p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => draft.clear()}>
+              Descartar
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setQuote({ ...draft.pending!.quote, id: initial.id, createdAt: initial.createdAt });
+                draft.dismiss();
+                toast.success("Borrador restaurado");
+              }}
+            >
+              Restaurar
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Pasos */}
       <nav aria-label="Pasos de la cotización" className="mb-6 flex gap-1 overflow-x-auto overflow-y-hidden border-b">
@@ -158,11 +218,12 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
             )}
           >
             {i + 1}. {s}
+            {!!counts[i] && <span className="ml-1.5 rounded-full bg-secondary px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground tabular-nums">{counts[i]}</span>}
           </button>
         ))}
       </nav>
 
-      <div className="grid flex-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid flex-1 items-start gap-6 pb-20 lg:grid-cols-[minmax(0,1fr)_22rem] lg:pb-0 2xl:grid-cols-[minmax(0,1fr)_34rem]">
         <section className="min-w-0 space-y-4" aria-label={STEPS[step]}>
           {step === 0 && (
             <>
@@ -287,6 +348,15 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
           {step === 4 && (
             <>
               <StepIntro title="Resumen de pagos" text="Revisa los montos y genera el PDF para enviarlo al cliente." />
+              {!quote.client.trim() && (
+                <p className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                  <AlertTriangle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                  Falta el nombre del cliente.
+                  <button type="button" className="font-semibold underline underline-offset-2" onClick={() => go(0)}>
+                    Completar
+                  </button>
+                </p>
+              )}
               <Card>
                 <CardHeader>
                   <CardTitle>{quote.client || "Cotización"}</CardTitle>
@@ -312,26 +382,69 @@ export function QuoteEditor({ initial }: { initial: Quote }) {
                 Siguiente <ArrowRight />
               </Button>
             ) : (
-              <Button className="bg-brand text-brand-foreground hover:bg-brand/85" onClick={save} disabled={busy === "save"}>
+              <Button className="bg-brand text-brand-contrast hover:bg-brand/85" onClick={save} disabled={busy === "save"}>
                 <Save /> Guardar cotización
               </Button>
             )}
           </footer>
         </section>
 
-        {/* Resumen siempre visible en escritorio */}
-        <aside className="hidden space-y-3 lg:sticky lg:top-8 lg:block" aria-label="Resumen">
-          <Card>
-            <CardHeader>
-              <CardTitle>Resumen</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SummaryRows totals={totals} igv={quote.igv} />
-            </CardContent>
-          </Card>
-          {pdfButtons}
+        {/* Panel lateral en escritorio: resumen o PDF en vivo */}
+        <aside className="hidden lg:sticky lg:top-8 lg:block" aria-label="Resumen y vista previa">
+          <Tabs defaultValue="resumen" className="gap-3">
+            <TabsList className="w-full">
+              <TabsTrigger value="resumen">Resumen</TabsTrigger>
+              <TabsTrigger value="pdf">PDF en vivo</TabsTrigger>
+            </TabsList>
+            <TabsContent value="resumen" className="space-y-3">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Resumen</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <SummaryRows totals={totals} igv={quote.igv} />
+                </CardContent>
+              </Card>
+              {pdfButtons}
+            </TabsContent>
+            <TabsContent value="pdf" className="space-y-3">
+              <div className="h-[calc(100dvh-13rem)] min-h-96">
+                <LivePdfPreview quote={quote} />
+              </div>
+              {pdfButtons}
+            </TabsContent>
+          </Tabs>
         </aside>
       </div>
+
+      {/* Móvil: total siempre a la vista */}
+      <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t bg-background/95 px-4 py-3 backdrop-blur lg:hidden">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Total primer año</p>
+          <p className="text-base font-extrabold tabular-nums">{money(totals.firstYear)}</p>
+        </div>
+        <Button variant="outline" onClick={showPdf} disabled={busy === "pdf"}>
+          <Eye /> PDF
+        </Button>
+        <Button onClick={save} disabled={busy === "save"}>
+          {busy === "save" ? <Loader2 className="animate-spin" /> : <Save />} Guardar
+        </Button>
+      </div>
+
+      <AlertDialog open={confirmNew} onOpenChange={setConfirmNew}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Descartar los cambios sin guardar?</AlertDialogTitle>
+            <AlertDialogDescription>Si empiezas una nueva cotización, se perderán los cambios de {quote.code}.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Seguir editando</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => newQuote(true)}>
+              Descartar y crear nueva
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <PdfPreviewDialog preview={preview} onClose={() => setPreview(null)} />
     </>

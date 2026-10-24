@@ -4,8 +4,9 @@ import { useState } from "react";
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { arrayMove, SortableList, useStableIds } from "@/components/sortable-list";
 
-/** Lista editable de textos (Incluye / Condiciones): edición en línea, quitar y agregar. */
+/** Lista editable de textos (Incluye / Condiciones): edición en línea, reordenar, quitar y agregar. */
 export function TextListEditor({
   label,
   items,
@@ -18,6 +19,7 @@ export function TextListEditor({
   placeholder: string;
 }) {
   const [draft, setDraft] = useState("");
+  const { ids, setIds } = useStableIds(items.length);
   const add = () => {
     if (!draft.trim()) return;
     onChange([...items, draft.trim()]);
@@ -27,23 +29,40 @@ export function TextListEditor({
   return (
     <div className="space-y-2">
       {items.length === 0 && <p className="text-sm text-muted-foreground">Sin puntos: esta sección no aparecerá en el PDF.</p>}
-      <ul className="space-y-2">
-        {items.map((text, i) => (
-          <li key={i} className="flex gap-2">
+      <SortableList
+        items={items}
+        ids={ids}
+        label={label}
+        itemLabel={(t, i) => t.trim() || `punto ${i + 1}`}
+        onReorder={(from, to) => {
+          setIds(arrayMove(ids, from, to));
+          onChange(arrayMove(items, from, to));
+        }}
+        renderItem={(text, i, handle) => (
+          <div className="flex items-center gap-1">
+            {handle}
             <Input
               value={text}
-              aria-label={`${label} ${i + 1}`}
+              aria-label={`${label}, punto ${i + 1}`}
               onChange={(e) => onChange(items.map((t, j) => (j === i ? e.target.value : t)))}
               maxLength={1000}
             />
-            <Button variant="ghost" size="icon" aria-label={`Quitar punto ${i + 1}`} onClick={() => onChange(items.filter((_, j) => j !== i))}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Quitar punto ${i + 1}`}
+              onClick={() => {
+                setIds(ids.filter((_, j) => j !== i));
+                onChange(items.filter((_, j) => j !== i));
+              }}
+            >
               <X />
             </Button>
-          </li>
-        ))}
-      </ul>
+          </div>
+        )}
+      />
       <form
-        className="flex gap-2"
+        className="flex gap-2 pl-9"
         onSubmit={(e) => {
           e.preventDefault();
           add();

@@ -3,22 +3,21 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { parseListParams } from "@/features/quotations/domain/list-params";
+import { QuotationsFilters } from "@/features/quotations/components/list/quotations-filters";
 import { QuotationsSearch } from "@/features/quotations/components/list/quotations-search";
 import { QuotationsTable, QuotationsTableSkeleton } from "@/features/quotations/components/list/quotations-table";
 
 export const metadata: Metadata = { title: "Cotizaciones" };
 
 async function Results({ searchParams }: { searchParams: PageProps<"/cotizaciones">["searchParams"] }) {
-  const sp = await searchParams;
-  const query = typeof sp.q === "string" ? sp.q.slice(0, 100) : "";
-  const page = Math.max(1, parseInt(typeof sp.page === "string" ? sp.page : "1", 10) || 1);
-  return <QuotationsTable query={query} page={page} />;
+  return <QuotationsTable params={parseListParams(await searchParams)} />;
 }
 
 export default function QuotationsPage({ searchParams }: PageProps<"/cotizaciones">) {
   return (
     <>
-      <header className="mb-6 flex flex-col justify-between gap-4 border-b pb-4 sm:flex-row sm:items-center">
+      <header className="mb-4 flex flex-col justify-between gap-4 border-b pb-4 sm:flex-row sm:items-center">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight">Cotizaciones</h1>
           <p className="text-sm text-muted-foreground">Historial de cotizaciones guardadas</p>
@@ -34,6 +33,11 @@ export default function QuotationsPage({ searchParams }: PageProps<"/cotizacione
           </Button>
         </div>
       </header>
+      <div className="mb-4 flex justify-end">
+        <Suspense>
+          <QuotationsFilters />
+        </Suspense>
+      </div>
       <Suspense fallback={<QuotationsTableSkeleton />}>
         <Results searchParams={searchParams} />
       </Suspense>

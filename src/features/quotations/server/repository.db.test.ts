@@ -81,4 +81,20 @@ describe("listado", () => {
     const found = await repo.listQuotations({ query: "café" });
     expect(found.rows.map((r) => r.client)).toEqual(["Café Andino"]);
   });
+
+  it("ordena, filtra por fecha de creación e incluye el total del primer año", async () => {
+    const old = await repo.createQuotation(quote({ code: code(1), client: "Beta", initial: [initialItem] }));
+    await prisma.quotation.update({ where: { id: old.id }, data: { createdAt: new Date(Date.now() - 60 * 864e5) } });
+    await repo.createQuotation(quote({ code: code(2), client: "Alfa", recurring: [monthlyItem] }));
+
+    const byClient = await repo.listQuotations({ sort: "cliente" });
+    expect(byClient.rows.map((r) => r.client)).toEqual(["Alfa", "Beta"]);
+
+    const last30 = await repo.listQuotations({ range: "30d" });
+    expect(last30.rows.map((r) => r.client)).toEqual(["Alfa"]);
+
+    // 1 000 + 30% + IGV = S/ 1 534.00 · hosting 50 + 30% + IGV = 76.70 × 12
+    expect(byClient.rows.find((r) => r.client === "Beta")?.firstYear).toBe(153_400);
+    expect(byClient.rows.find((r) => r.client === "Alfa")?.firstYear).toBe(7_670 * 12);
+  });
 });

@@ -1,17 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { cloneElement, isValidElement, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: React.ReactNode }) {
+export function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: React.ReactElement<{ "aria-describedby"?: string }> }) {
+  const hintId = `${id}-hint`;
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id} className="text-xs font-semibold text-muted-foreground">
         {label}
       </Label>
-      {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {/* La ayuda se anuncia junto con el campo en lectores de pantalla */}
+      {hint && isValidElement(children) ? cloneElement(children, { "aria-describedby": hintId }) : children}
+      {hint && (
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -24,6 +30,7 @@ export function NumberInput({
   min,
   max,
   step = "any",
+  "aria-describedby": describedBy,
 }: {
   id: string;
   value: number;
@@ -31,6 +38,7 @@ export function NumberInput({
   min?: number;
   max?: number;
   step?: number | "any";
+  "aria-describedby"?: string;
 }) {
   const [text, setText] = useState(String(value));
   const [prev, setPrev] = useState(value);
@@ -43,6 +51,7 @@ export function NumberInput({
   return (
     <Input
       id={id}
+      aria-describedby={describedBy}
       type="number"
       inputMode="decimal"
       min={min}

@@ -1,6 +1,8 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { quoteTotals, type Cents } from "../domain/calc";
+import { rangeStart, type ListParams, type Sort } from "../domain/list-params";
 import type { QuoteInput } from "../domain/schema";
 import { toQuote, toRecordData, withRelations } from "./mappers";
 
@@ -16,31 +18,50 @@ export interface QuotationRow {
   plan: string;
   days: number;
   updatedAt: string;
+  /** Total del primer año en céntimos (mismo cálculo que el PDF). */
+  firstYear: Cents;
 }
 
-export async function listQuotations({ query = "", page = 1 }: { query?: string; page?: number }) {
+const ORDER: Record<Sort, Prisma.QuotationOrderByWithRelationInput> = {
+  recientes: { updatedAt: "desc" },
+  antiguas: { updatedAt: "asc" },
+  codigo: { code: "desc" },
+  cliente: { client: "asc" },
+};
+
+export async function listQuotations({ query = "", page = 1, sort = "recientes", range = "todo" }: Partial<ListParams> = {}) {
   const q = query.trim();
-  const where: Prisma.QuotationWhereInput = q
-    ? {
-        OR: [
-          { client: { contains: q, mode: "insensitive" } },
-          { code: { contains: q, mode: "insensitive" } },
-          { plan: { contains: q, mode: "insensitive" } },
-        ],
-      }
-    : {};
-  const [rows, total] = await Promise.all([
+  const since = rangeStart(range, new Date());
+  const where: Prisma.QuotationWhereInput = {
+    ...(q && {
+      OR: [
+        { client: { contains: q, mode: "insensitive" } },
+        { code: { contains: q, mode: "insensitive" } },
+        { plan: { contains: q, mode: "insensitive" } },
+      ],
+    }),
+    ...(since && { createdAt: { gte: since } }),
+  };
+  const [records, total] = await Promise.all([
     prisma.quotation.findMany({
       where,
-      orderBy: { updatedAt: "desc" },
+      orderBy: [ORDER[sort], { id: "asc" }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
-      select: { id: true, code: true, client: true, plan: true, days: true, updatedAt: true },
+      include: withRelations,
     }),
     prisma.quotation.count({ where }),
   ]);
   return {
-    rows: rows.map((r): QuotationRow => ({ ...r, updatedAt: r.updatedAt.toISOString() })),
+    rows: records.map((r): QuotationRow => ({
+      id: r.id,
+      code: r.code,
+      client: r.client,
+      plan: r.plan,
+      days: r.days,
+      updatedAt: r.updatedAt.toISOString(),
+      firstYear: quoteTotals(toQuote(r)).firstYear,
+    })),
     total,
     pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
   };
