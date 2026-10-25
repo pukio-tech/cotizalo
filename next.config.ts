@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
   // URLs de la versión anterior (Express + HTML) para no romper enlaces guardados
   async redirects() {
     return [
-      { source: "/", destination: "/cotizaciones/nueva", permanent: false },
+      { source: "/", destination: "/panel", permanent: false },
       {
         source: "/index.html",
         has: [{ type: "query", key: "id", value: "(?<id>.+)" }],

@@ -3,9 +3,10 @@ import { randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { quoteTotals, type Cents } from "../domain/calc";
-import { rangeStart, type ListParams, type Sort } from "../domain/list-params";
+import { rangeStart, type ListParams, type Range, type Sort } from "../domain/list-params";
 import type { QuoteInput, Status } from "../domain/schema";
-import { toQuote, toRecordData, withRelations } from "./mappers";
+import { ACCEPTABLE_STATUSES } from "../domain/status";
+import { toQuote, toRecordData, withRelations, type QuotationRecord } from "./mappers";
 
 // Acceso a datos de cotizaciones. Es el único módulo que habla con Prisma sobre cotizaciones y
 // TODAS sus funciones exigen la empresa (orgId): una cotización de otra empresa no existe para ti.
@@ -32,6 +33,21 @@ export interface QuotationRow {
   updatedAt: string;
   /** Total del primer año en céntimos (mismo cálculo que el PDF). */
   firstYear: Cents;
+}
+
+function toRow(r: QuotationRecord): QuotationRow {
+  const quote = toQuote(r);
+  return {
+    id: r.id,
+    code: r.code,
+    client: r.client,
+    plan: r.plan,
+    days: r.days,
+    status: quote.status,
+    issuedAt: quote.issuedAt,
+    updatedAt: r.updatedAt.toISOString(),
+    firstYear: quoteTotals(quote).firstYear,
+  };
 }
 
 const ORDER: Record<Sort, Prisma.QuotationOrderByWithRelationInput> = {
@@ -67,23 +83,21 @@ export async function listQuotations(orgId: string, { query = "", page = 1, sort
     prisma.quotation.count({ where }),
   ]);
   return {
-    rows: records.map((r): QuotationRow => {
-      const quote = toQuote(r);
-      return {
-        id: r.id,
-        code: r.code,
-        client: r.client,
-        plan: r.plan,
-        days: r.days,
-        status: quote.status,
-        issuedAt: quote.issuedAt,
-        updatedAt: r.updatedAt.toISOString(),
-        firstYear: quoteTotals(quote).firstYear,
-      };
-    }),
+    rows: records.map(toRow),
     total,
     pageCount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
   };
+}
+
+/** Todas las cotizaciones de la empresa (tablero y panel), opcionalmente desde un rango de emisión. */
+export async function listAllQuotations(orgId: string, { range = "todo" }: { range?: Range } = {}) {
+  const since = rangeStart(range, new Date());
+  const records = await prisma.quotation.findMany({
+    where: { organizationId: orgId, ...(since && { issuedAt: { gte: since } }) },
+    orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+    include: withRelations,
+  });
+  return records.map(toRow);
 }
 
 export const countQuotations = (orgId: string) => prisma.quotation.count({ where: { organizationId: orgId } });
@@ -172,10 +186,23 @@ export async function deleteQuotation(orgId: string, id: string) {
   if (!count) throw new NotFoundError();
 }
 
-/** Cambia solo el estado (p. ej. desde el listado). */
+/**
+ * Cambia solo el estado (listado, tablero). Marcarla aceptada a mano registra la fecha;
+ * sacarla de aceptada borra quién y cuándo la aceptó.
+ */
 export async function setStatus(orgId: string, id: string, status: Status) {
-  const { count } = await prisma.quotation.updateMany({ where: { id, organizationId: orgId }, data: { status } });
-  if (!count) throw new NotFoundError();
+  await prisma.$transaction(async (tx) => {
+    const q = await tx.quotation.findFirst({ where: { id, organizationId: orgId }, select: { status: true } });
+    if (!q) throw new NotFoundError();
+    if (q.status === status) return;
+    await tx.quotation.update({
+      where: { id },
+      data: {
+        status,
+        ...(status === "aceptada" ? { acceptedAt: new Date() } : q.status === "aceptada" && { acceptedAt: null, acceptedBy: null }),
+      },
+    });
+  });
 }
 
 // ─── Enlace público ──────────────────────────────────────────────────────────
@@ -210,10 +237,10 @@ export async function getPublicQuotation(token: string) {
   return { quote: toQuote(r), organization: r.organization };
 }
 
-/** Aceptación del cliente: solo si sigue "enviada" (la vigencia la valida quien llama). */
+/** Aceptación del cliente: solo si sigue enviada o en negociación (la vigencia la valida quien llama). */
 export async function acceptPublicQuotation(token: string, acceptedBy: string) {
   const { count } = await prisma.quotation.updateMany({
-    where: { publicToken: token, status: "enviada" },
+    where: { publicToken: token, status: { in: [...ACCEPTABLE_STATUSES] } },
     data: { status: "aceptada", acceptedAt: new Date(), acceptedBy },
   });
   return count > 0;

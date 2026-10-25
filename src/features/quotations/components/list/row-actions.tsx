@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { Copy, Eye, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Copy, Ellipsis, Eye, Loader2, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { quotationPdfUrl } from "../../pdf/client";
 import { deleteQuotation, duplicateQuotation, loadQuotation } from "../../server/actions";
@@ -85,12 +86,27 @@ export function RowActions({ id, code, client }: { id: string; code: string; cli
         </TooltipTrigger>
         <TooltipContent>Editar</TooltipContent>
       </Tooltip>
-      <IconAction label="Duplicar" onClick={duplicate} busy={busy === "copy"}>
-        <Copy />
-      </IconAction>
-      <IconAction label="Eliminar" onClick={() => setConfirmDelete(true)} busy={busy === "delete"}>
-        <Trash2 className="text-destructive" />
-      </IconAction>
+      {/* Duplicar y eliminar van en un menú: la fila queda angosta y sin scroll horizontal */}
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-sm" disabled={busy === "copy" || busy === "delete"} aria-label="Más acciones">
+                {busy === "copy" || busy === "delete" ? <Loader2 className="animate-spin" /> : <Ellipsis />}
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>Más acciones</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuItem onSelect={duplicate}>
+            <Copy /> Duplicar
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onSelect={() => setConfirmDelete(true)}>
+            <Trash2 /> Eliminar
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>

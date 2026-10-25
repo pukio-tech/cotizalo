@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { FilePlus2, Files, Settings } from "lucide-react";
+import { FilePlus2, Files, LayoutDashboard, Settings, SquareKanban } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { countQuotations } from "@/features/quotations/server/repository";
 import { getViewer } from "@/lib/session";
@@ -37,6 +37,9 @@ export function AppSidebar() {
 
       <p className="mx-2.5 mb-1.5 hidden text-[11px] font-bold tracking-wider text-muted-foreground uppercase md:block">Operación</p>
       <nav aria-label="Principal" className="flex flex-wrap gap-1.5 md:flex-col md:flex-nowrap">
+        <NavLink href="/panel" icon={<LayoutDashboard />}>
+          Panel
+        </NavLink>
         <NavLink href="/cotizaciones/nueva" icon={<FilePlus2 />}>
           Nueva cotización
         </NavLink>
@@ -51,6 +54,9 @@ export function AppSidebar() {
           }
         >
           Cotizaciones
+        </NavLink>
+        <NavLink href="/cotizaciones/tablero" icon={<SquareKanban />}>
+          Tablero
         </NavLink>
         <NavLink href="/ajustes" icon={<Settings />}>
           Ajustes

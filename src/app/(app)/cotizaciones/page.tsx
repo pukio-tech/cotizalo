@@ -7,6 +7,7 @@ import { parseListParams } from "@/features/quotations/domain/list-params";
 import { QuotationsFilters } from "@/features/quotations/components/list/quotations-filters";
 import { QuotationsSearch } from "@/features/quotations/components/list/quotations-search";
 import { QuotationsTable, QuotationsTableSkeleton } from "@/features/quotations/components/list/quotations-table";
+import { ViewSwitch } from "@/features/quotations/components/view-switch";
 
 export const metadata: Metadata = { title: "Cotizaciones" };
 
@@ -33,7 +34,8 @@ export default function QuotationsPage({ searchParams }: PageProps<"/cotizacione
           </Button>
         </div>
       </header>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <ViewSwitch current="lista" />
         <Suspense>
           <QuotationsFilters />
         </Suspense>

@@ -180,11 +180,34 @@ src/
    La migración solo agrega tablas y columnas. La versión de `main` sigue funcionando con la BD migrada, así que puedes migrar antes de fusionar.
 3. Despliega la rama `next`, entra a `/registro` con el correo de `COTIZALO_OWNER_EMAIL` y crea tu empresa: verás tus cotizaciones de siempre.
 
+## Fase 4.1 · Tablero, panel y listado sin scroll ✅ (rama `next`, sin migración)
+
+- [x] Estado nuevo **En negociación**:
+  - Se guarda en la misma columna `status` (texto), así que no requiere migración.
+  - No vence, y el cliente puede aceptar desde el enlace.
+- [x] **Tablero** `/cotizaciones/tablero`:
+  - Una columna por estado, con cantidad y total del primer año.
+  - Se arrastra con el mouse, con toque prolongado o con el teclado (asa + flechas).
+  - También se puede cambiar el estado desde el distintivo de cada tarjeta.
+- [x] **Cambio de estado en el listado:** el distintivo de estado es un menú y guarda al instante.
+  - Marcar una cotización como aceptada registra la fecha.
+  - Sacarla de aceptada borra quién y cuándo la aceptó.
+- [x] **Panel** `/panel`, que ahora es la página de inicio:
+  - **Aceptado:** solo las aceptadas.
+  - **Pronosticado:** aceptadas + borradores, enviadas, vencidas y en negociación; excluye las rechazadas.
+  - **En curso** y **tasa de cierre**.
+  - Desglose por estado y gráfico de los últimos 6 meses.
+  - Filtro por fecha de emisión.
+- [x] **Listado sin scroll horizontal:**
+  - Tabla de ancho fijo y textos largos recortados.
+  - Columnas secundarias que se ocultan según el ancho, y tarjetas por debajo de 1024 px.
+  - Duplicar y eliminar se movieron a un menú "⋯".
+
 ## Fase 5 · Extras
 
 - Envío por correo / WhatsApp con el PDF adjunto o enlace.
 - Generación del PDF en servidor (route handler) para enlaces y correos.
-- Métricas: monto cotizado, tasa de aceptación, por mes.
+- ~~Métricas: monto cotizado, tasa de aceptación, por mes~~ → hecho en la Fase 4.1 (panel).
 
 ---
 

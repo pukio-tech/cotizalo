@@ -6,8 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toISODate } from "../../domain/dates";
 import { money } from "../../domain/format";
-import { effectiveStatus } from "../../domain/status";
-import { StatusBadge } from "../status-badge";
+import { QuotationStatus } from "../status-menu";
 import type { ListParams } from "../../domain/list-params";
 import { requireViewer } from "@/lib/session";
 import { listQuotations } from "../../server/repository";
@@ -53,19 +52,19 @@ export async function QuotationsTable({ params }: { params: ListParams }) {
 
   return (
     <div className="space-y-4">
-      {/* Escritorio: tabla */}
-      <div className="hidden overflow-hidden rounded-xl border md:block">
-        <Table>
+      {/* Escritorio: tabla de ancho fijo (table-fixed): los textos largos se recortan y las columnas
+          secundarias se ocultan en pantallas más angostas, así nunca aparece scroll horizontal */}
+      <div className="hidden overflow-hidden rounded-xl border lg:block">
+        <Table className="table-fixed">
           <TableHeader className="bg-muted">
             <TableRow>
-              <TableHead>Código</TableHead>
-              <TableHead>Cliente</TableHead>
-              <TableHead>Plan propuesto</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="text-center">Validez</TableHead>
-              <TableHead className="text-right">Total primer año</TableHead>
-              <TableHead className="text-right">Actualizado</TableHead>
-              <TableHead className="text-right">
+              <TableHead className="w-32 pl-4">Código</TableHead>
+              <TableHead>Cliente y plan</TableHead>
+              <TableHead className="w-36">Estado</TableHead>
+              <TableHead className="w-32 text-right">Total primer año</TableHead>
+              <TableHead className="hidden w-28 text-right xl:table-cell">Actualizado</TableHead>
+              <TableHead className="hidden w-20 text-center 2xl:table-cell">Validez</TableHead>
+              <TableHead className="w-28">
                 <span className="sr-only">Acciones</span>
               </TableHead>
             </TableRow>
@@ -73,20 +72,26 @@ export async function QuotationsTable({ params }: { params: ListParams }) {
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.id}>
-                <TableCell className="font-mono font-bold">
-                  <Link href={`/cotizaciones/${r.id}`} className="hover:underline">
+                <TableCell className="pl-4 font-mono font-bold">
+                  <Link href={`/cotizaciones/${r.id}`} className="block truncate hover:underline" title={r.code}>
                     {r.code}
                   </Link>
                 </TableCell>
-                <TableCell className="font-medium">{r.client || <span className="text-muted-foreground italic">Sin cliente</span>}</TableCell>
-                <TableCell className="text-muted-foreground">{r.plan || "-"}</TableCell>
                 <TableCell>
-                  <StatusBadge status={effectiveStatus(r, today)} />
+                  <p className="truncate font-medium" title={r.client}>
+                    {r.client || <span className="text-muted-foreground italic">Sin cliente</span>}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground" title={r.plan}>
+                    {r.plan || "-"}
+                  </p>
                 </TableCell>
-                <TableCell className="text-center text-muted-foreground">{r.days} días</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{money(r.firstYear)}</TableCell>
-                <TableCell className="text-right text-muted-foreground tabular-nums">{dateFmt.format(new Date(r.updatedAt))}</TableCell>
                 <TableCell>
+                  <QuotationStatus id={r.id} status={r.status} issuedAt={r.issuedAt} days={r.days} today={today} />
+                </TableCell>
+                <TableCell className="text-right font-semibold tabular-nums">{money(r.firstYear)}</TableCell>
+                <TableCell className="hidden text-right text-muted-foreground tabular-nums xl:table-cell">{dateFmt.format(new Date(r.updatedAt))}</TableCell>
+                <TableCell className="hidden text-center text-muted-foreground 2xl:table-cell">{r.days} días</TableCell>
+                <TableCell className="pr-3">
                   <RowActions id={r.id} code={r.code} client={r.client} />
                 </TableCell>
               </TableRow>
@@ -95,17 +100,19 @@ export async function QuotationsTable({ params }: { params: ListParams }) {
         </Table>
       </div>
 
-      {/* Móvil: tarjetas */}
-      <ul className="space-y-2 md:hidden">
+      {/* Móvil y tablet: tarjetas */}
+      <ul className="space-y-2 lg:hidden">
         {rows.map((r) => (
           <li key={r.id} className="rounded-xl border p-3">
-            <Link href={`/cotizaciones/${r.id}`} className="block">
-              <p className="flex items-center justify-between gap-2">
-                <span className="font-mono text-sm font-bold">{r.code}</span>
-                <StatusBadge status={effectiveStatus(r, today)} />
-              </p>
-              <p className="font-medium">{r.client || "Sin cliente"}</p>
-              <p className="text-sm text-muted-foreground">
+            <div className="flex items-center justify-between gap-2">
+              <Link href={`/cotizaciones/${r.id}`} className="font-mono text-sm font-bold hover:underline">
+                {r.code}
+              </Link>
+              <QuotationStatus id={r.id} status={r.status} issuedAt={r.issuedAt} days={r.days} today={today} />
+            </div>
+            <Link href={`/cotizaciones/${r.id}`} className="block min-w-0">
+              <p className="truncate font-medium">{r.client || "Sin cliente"}</p>
+              <p className="truncate text-sm text-muted-foreground">
                 {r.plan || "-"} · {dateFmt.format(new Date(r.updatedAt))}
               </p>
               <p className="mt-1 text-sm font-semibold tabular-nums">

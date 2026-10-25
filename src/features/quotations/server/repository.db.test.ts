@@ -149,3 +149,28 @@ describe("listado", () => {
     expect(byClient.rows.find((r) => r.client === "Alfa")?.firstYear).toBe(7_670 * 12);
   });
 });
+
+describe("cambio de estado (tablero)", () => {
+  it("marcar aceptada registra la fecha y sacarla de aceptada la limpia", async () => {
+    const { id } = await repo.createQuotation(A, quote({ code: code(1) }));
+    await repo.setStatus(A, id, "aceptada");
+    expect((await repo.getQuotation(A, id))?.acceptedAt).not.toBeNull();
+    await repo.setStatus(A, id, "negociacion");
+    expect(await repo.getQuotation(A, id)).toMatchObject({ status: "negociacion", acceptedAt: null, acceptedBy: null });
+    await expect(repo.setStatus(B, id, "rechazada")).rejects.toBeInstanceOf(repo.NotFoundError);
+  });
+
+  it("el cliente puede aceptar una cotización en negociación", async () => {
+    const { id } = await repo.createQuotation(A, quote({ code: code(1) }));
+    const token = await repo.shareQuotation(A, id);
+    await repo.setStatus(A, id, "negociacion");
+    expect(await repo.acceptPublicQuotation(token, "Ana Pérez")).toBe(true);
+    expect((await repo.getQuotation(A, id))?.status).toBe("aceptada");
+  });
+
+  it("el tablero trae todas las cotizaciones de la empresa sin paginar", async () => {
+    for (let i = 1; i <= repo.PAGE_SIZE + 2; i++) await repo.createQuotation(A, quote({ code: code(i) }));
+    await repo.createQuotation(B, quote({ code: code(1) }));
+    expect(await repo.listAllQuotations(A)).toHaveLength(repo.PAGE_SIZE + 2);
+  });
+});
