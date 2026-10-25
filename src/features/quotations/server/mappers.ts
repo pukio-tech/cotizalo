@@ -8,7 +8,7 @@ export const withRelations = {
   conditions: { orderBy: { order: "asc" } },
 } satisfies Prisma.QuotationInclude;
 
-type QuotationRecord = Prisma.QuotationGetPayload<{ include: typeof withRelations }>;
+export type QuotationRecord = Prisma.QuotationGetPayload<{ include: typeof withRelations }>;
 
 /** Registro de BD → cotización de la UI. */
 export function toQuote(r: QuotationRecord): Quote {

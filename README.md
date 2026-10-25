@@ -39,7 +39,9 @@ npm run build        # prisma generate + next build
 src/
   app/
     (app)/layout.tsx                 # sidebar + contenido
+    (app)/panel/                     # panel: aceptado, pronosticado, por estado y por mes
     (app)/cotizaciones/page.tsx      # listado con búsqueda y paginación en servidor
+    (app)/cotizaciones/tablero/      # tablero kanban por estado (arrastrar para cambiar)
     (app)/cotizaciones/nueva/        # editor de cotización nueva
     (app)/cotizaciones/[id]/         # editor de cotización existente
     (app)/ajustes/                   # empresa (cabecera, logo) y catálogo

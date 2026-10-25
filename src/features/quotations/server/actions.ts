@@ -1,7 +1,7 @@
 "use server";
 
 import { Prisma } from "@prisma/client";
-import { revalidatePath } from "next/cache";
+import { refresh, revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getViewer, requireOrgId, UnauthorizedError } from "@/lib/session";
 import { toISODate } from "../domain/dates";
@@ -71,7 +71,8 @@ export async function deleteQuotation(id: string): Promise<ActionResult> {
 export async function updateStatus(id: string, status: unknown): Promise<ActionResult> {
   try {
     await repo.setStatus(await requireOrgId(), idSchema.parse(id), z.enum(STATUSES).parse(status));
-    revalidatePath("/cotizaciones");
+    // Se usa desde el listado, el tablero y el panel: refresca la vista en la que esté el usuario
+    refresh();
     return { ok: true, data: undefined };
   } catch (e) {
     return fail(e);

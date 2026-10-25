@@ -7,7 +7,7 @@ export const PERIODS = ["mensual", "anual"] as const;
 export type Period = (typeof PERIODS)[number];
 
 /** Estados guardados. "vencida" no se guarda: se calcula (ver domain/status.ts). */
-export const STATUSES = ["borrador", "enviada", "aceptada", "rechazada"] as const;
+export const STATUSES = ["borrador", "enviada", "negociacion", "aceptada", "rechazada"] as const;
 export type Status = (typeof STATUSES)[number];
 
 export const itemSchema = z.object({
